@@ -119,12 +119,12 @@ function logStartupWarnings() {
     }
   });
 }
-
+/*
 app.use(express.static(frontendDir));
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(frontendDir, "index.html"));
-});
+});*/
 
 const transporter = runtime.isLocalTestMode
   ? {
