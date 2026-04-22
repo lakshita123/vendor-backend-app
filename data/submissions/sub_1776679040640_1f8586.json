@@ -1,0 +1,53 @@
+{
+  "submissionId": "sub_1776679040640_1f8586",
+  "createdAt": "2026-04-20T09:57:20.640Z",
+  "updatedAt": "2026-04-20T09:58:17.023Z",
+  "status": "completed",
+  "source": "frontend-upload",
+  "driveFolderId": "1A1hKr5vWePwm7s7z8a-WrU66FPSnael3",
+  "driveFolderLink": "https://drive.google.com/drive/folders/1A1hKr5vWePwm7s7z8a-WrU66FPSnael3",
+  "uploadedFiles": [
+    {
+      "fieldname": "company_gst",
+      "originalname": "GST Registration.pdf",
+      "mimetype": "application/pdf",
+      "size": 79934
+    },
+    {
+      "fieldname": "pan",
+      "originalname": "PAN.pdf",
+      "mimetype": "application/pdf",
+      "size": 139440
+    },
+    {
+      "fieldname": "aadhar",
+      "originalname": "ADHAR FRONT.pdf",
+      "mimetype": "application/pdf",
+      "size": 152998
+    },
+    {
+      "fieldname": "geo_tag_photo",
+      "originalname": "WhatsApp Image 2026-04-12 at 11.49.44.jpeg",
+      "mimetype": "image/jpeg",
+      "size": 885231
+    }
+  ],
+  "submission": {
+    "name": "Test Vendor",
+    "phone": "9999999999",
+    "email": "test@test.com",
+    "constitution": "Proprietorship",
+    "product": "PET",
+    "hsn": "1234"
+  },
+  "processing": {
+    "startedAt": "2026-04-20T09:57:23.906Z",
+    "completedAt": "2026-04-20T09:58:17.023Z",
+    "reviewEmailSent": true,
+    "reportPath": "C:\\Users\\LAKSHITA\\Desktop\\DESKTOPP\\vendor-project\\backend\\reports\\issue-report-1776679093342.pdf",
+    "reason": "Review email sent",
+    "issuesCount": 5,
+    "validationStatus": "needs_review",
+    "error": null
+  }
+}

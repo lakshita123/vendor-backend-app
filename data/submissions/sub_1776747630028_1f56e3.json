@@ -1,0 +1,95 @@
+{
+  "submissionId": "sub_1776747630028_1f56e3",
+  "createdAt": "2026-04-21T05:00:30.028Z",
+  "updatedAt": "2026-04-21T05:01:23.413Z",
+  "status": "completed",
+  "source": "frontend-upload",
+  "driveFolderId": "1R-O_288r9tXb08uf3j9vsfgnIMWqpsoX",
+  "driveFolderLink": "https://drive.google.com/drive/folders/1R-O_288r9tXb08uf3j9vsfgnIMWqpsoX",
+  "uploadedFiles": [
+    {
+      "fieldname": "geo_tag_photo",
+      "originalname": "WhatsApp Image 2026-03-11 at 3.28.35 PM (1).jpeg",
+      "mimetype": "image/jpeg",
+      "size": 204845
+    },
+    {
+      "fieldname": "company_gst",
+      "originalname": "AA0708230496134_RC25082023 (2).pdf",
+      "mimetype": "application/pdf",
+      "size": 79934
+    },
+    {
+      "fieldname": "msme",
+      "originalname": "MSME-SKE.pdf",
+      "mimetype": "application/pdf",
+      "size": 1056983
+    },
+    {
+      "fieldname": "aadhar",
+      "originalname": "ADHAR FRONT.jpeg",
+      "mimetype": "image/jpeg",
+      "size": 56965
+    },
+    {
+      "fieldname": "pan",
+      "originalname": "PAN.jpeg",
+      "mimetype": "image/jpeg",
+      "size": 54700
+    },
+    {
+      "fieldname": "cheque",
+      "originalname": "WhatsApp Image 2026-01-29 at 2.54.48 PM.jpeg",
+      "mimetype": "image/jpeg",
+      "size": 132837
+    },
+    {
+      "fieldname": "gstr3b_1",
+      "originalname": "GSTR3B_07CDUPD1114R1Z6_102025 (2).pdf",
+      "mimetype": "application/pdf",
+      "size": 39868
+    },
+    {
+      "fieldname": "gstr3b_2",
+      "originalname": "GSTR3B_07CDUPD1114R1Z6_112025 (1).pdf",
+      "mimetype": "application/pdf",
+      "size": 39741
+    },
+    {
+      "fieldname": "gstr3b_3",
+      "originalname": "GSTR3B_07CDUPD1114R1Z6_122025 (1).pdf",
+      "mimetype": "application/pdf",
+      "size": 39995
+    },
+    {
+      "fieldname": "gst_bank",
+      "originalname": "image.png",
+      "mimetype": "image/png",
+      "size": 105893
+    }
+  ],
+  "submission": {
+    "name": "Lakshita Singla",
+    "phone": "8837803720",
+    "email": "lilliving02@gmail.com",
+    "constitution": "Proprietorship",
+    "vendorType": "Trader",
+    "product": "Granules",
+    "hsn": "5678",
+    "geoAddress": "Noida City Centre, Noida, Dadri, Gautam Buddha Nagar, Uttar Pradesh, 201303, India",
+    "geoLatitude": "28.573256",
+    "geoLongitude": "77.352903",
+    "geoMapsUrl": "https://www.google.com/maps?q=28.573256%2C77.352903",
+    "geoCapturedAt": "21/4/2026, 10:29:13 am"
+  },
+  "processing": {
+    "startedAt": "2026-04-21T05:00:33.168Z",
+    "completedAt": "2026-04-21T05:01:23.413Z",
+    "reviewEmailSent": true,
+    "reportPath": "C:\\Users\\LAKSHITA\\Desktop\\DESKTOPP\\vendor-project\\backend\\reports\\issue-report-1776747679453.pdf",
+    "reason": "Review email sent",
+    "issuesCount": 9,
+    "validationStatus": "needs_review",
+    "error": null
+  }
+}

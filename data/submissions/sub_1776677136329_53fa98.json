@@ -1,0 +1,29 @@
+{
+  "submissionId": "sub_1776677136329_53fa98",
+  "createdAt": "2026-04-20T09:25:36.329Z",
+  "updatedAt": "2026-04-20T09:25:37.028Z",
+  "status": "failed",
+  "source": "drive-folder",
+  "driveFolderId": "1AbCdEfGhIjKlmNoP",
+  "driveFolderLink": "https://drive.google.com/drive/folders/1AbCdEfGhIjKlmNoP",
+  "uploadedFiles": [],
+  "submission": {
+    "name": "Test Vendor",
+    "phone": "9999999999",
+    "email": "test@example.com",
+    "constitution": "Proprietorship",
+    "vendorType": "Recycler",
+    "product": "PET Bottles",
+    "hsn": "1234"
+  },
+  "processing": {
+    "startedAt": "2026-04-20T09:25:36.336Z",
+    "completedAt": "2026-04-20T09:25:37.028Z",
+    "reviewEmailSent": false,
+    "reportPath": null,
+    "reason": "Drive download failed",
+    "issuesCount": null,
+    "validationStatus": null,
+    "error": "request to https://oauth2.googleapis.com/token failed, reason: connect ECONNREFUSED 127.0.0.1:9"
+  }
+}

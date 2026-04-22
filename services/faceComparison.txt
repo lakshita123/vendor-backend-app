@@ -1,0 +1,128 @@
+/**
+ * faceComparison.js
+ * -----------------
+ * Detects faces in two images and compares them.
+ * Uses @vladmandic/face-api with tfjs-node backend.
+ *
+ * Handles:
+ *  - No face detected
+ *  - Multiple faces (picks the largest/most prominent)
+ *  - Low-quality images (sharp preprocessing)
+ *  - Returns { match: bool, confidence: 0-1, details: {} }
+ */
+
+const path = require("path");
+const sharp = require("sharp"); // already used in filePreparation.js
+const canvas = require("canvas");
+const faceapi = require("@vladmandic/face-api");
+
+// ── Model loading ──────────────────────────────────────────────
+const MODELS_DIR = path.join(__dirname, "../../face-models");
+let modelsLoaded = false;
+
+async function loadModels() {
+  if (modelsLoaded) return;
+
+  // Patch faceapi to use node-canvas (required for non-browser env)
+  const { Canvas, Image, ImageData } = canvas;
+  faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
+
+  await faceapi.nets.ssdMobilenetv1.loadFromDisk(MODELS_DIR);
+  await faceapi.nets.faceRecognitionNet.loadFromDisk(MODELS_DIR);
+  await faceapi.nets.faceLandmark68Net.loadFromDisk(MODELS_DIR);
+
+  modelsLoaded = true;
+  console.log("[FaceAPI] Models loaded.");
+}
+
+// ── Image preprocessing ────────────────────────────────────────
+/**
+ * Reads an image file, normalises size and quality for face detection.
+ * Returns a Buffer (JPEG).
+ */
+async function preprocessImage(filePath) {
+  return sharp(filePath)
+    .rotate()                         // auto-rotate from EXIF
+    .resize({ width: 640, withoutEnlargement: true })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+}
+
+// ── Face detection ─────────────────────────────────────────────
+/**
+ * Detects all faces in an image buffer.
+ * Returns the descriptor of the best (largest) face.
+ * Throws a descriptive error if no face is found.
+ */
+async function getBestDescriptor(imageBuffer, label) {
+  const img = await canvas.loadImage(imageBuffer);
+  const detections = await faceapi
+    .detectAllFaces(img, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 }))
+    .withFaceLandmarks()
+    .withFaceDescriptors();
+
+  if (!detections || detections.length === 0) {
+    throw new Error(`No face detected in ${label}.`);
+  }
+
+  // Pick the detection with the largest bounding box area
+  const best = detections.reduce((prev, curr) => {
+    const prevArea = prev.detection.box.width * prev.detection.box.height;
+    const currArea = curr.detection.box.width * curr.detection.box.height;
+    return currArea > prevArea ? curr : prev;
+  });
+
+  return {
+    descriptor: best.descriptor,
+    faceCount: detections.length,
+    confidence: best.detection.score,
+    box: best.detection.box,
+  };
+}
+
+// ── Euclidean distance → similarity ───────────────────────────
+/**
+ * face-api uses euclidean distance between 128-D descriptors.
+ * Typical threshold: distance < 0.6 → same person.
+ * We convert to a 0–1 confidence score for readability.
+ */
+const MATCH_THRESHOLD = 0.55; // stricter than default 0.6
+
+function distanceToConfidence(distance) {
+  // Map [0, 1.2] → [1, 0] with a smooth curve
+  const conf = Math.max(0, 1 - distance / 1.2);
+  return parseFloat(conf.toFixed(4));
+}
+
+// ── Public API ─────────────────────────────────────────────────
+async function compareFaces(imagePath1, imagePath2) {
+  await loadModels();
+
+  const [buf1, buf2] = await Promise.all([
+    preprocessImage(imagePath1),
+    preprocessImage(imagePath2),
+  ]);
+
+  const [face1, face2] = await Promise.all([
+    getBestDescriptor(buf1, "image 1"),
+    getBestDescriptor(buf2, "image 2"),
+  ]);
+
+  const distance = faceapi.euclideanDistance(face1.descriptor, face2.descriptor);
+  const confidence = distanceToConfidence(distance);
+  const match = distance < MATCH_THRESHOLD;
+
+  return {
+    match,
+    confidence,
+    distance: parseFloat(distance.toFixed(4)),
+    details: {
+      image1FaceCount: face1.faceCount,
+      image1DetectionScore: parseFloat(face1.confidence.toFixed(3)),
+      image2FaceCount: face2.faceCount,
+      image2DetectionScore: parseFloat(face2.confidence.toFixed(3)),
+    },
+  };
+}
+
+module.exports = { compareFaces };

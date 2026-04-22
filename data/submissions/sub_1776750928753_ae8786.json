@@ -1,0 +1,28 @@
+{
+  "submissionId": "sub_1776750928753_ae8786",
+  "createdAt": "2026-04-21T05:55:28.753Z",
+  "updatedAt": "2026-04-21T05:55:51.870Z",
+  "status": "completed",
+  "source": "drive-folder",
+  "driveFolderId": "1r4OvGuUSEzbHkttbiqT-hBqZVO1yCYLO",
+  "driveFolderLink": "https://drive.google.com/drive/folders/1r4OvGuUSEzbHkttbiqT-hBqZVO1yCYLO",
+  "uploadedFiles": [],
+  "submission": {
+    "name": "test",
+    "phone": "89",
+    "email": "abc@gmail.com",
+    "constitution": "Proprietorship",
+    "vendorType": "Trader",
+    "product": "Test"
+  },
+  "processing": {
+    "startedAt": "2026-04-21T05:55:31.905Z",
+    "completedAt": "2026-04-21T05:55:51.870Z",
+    "reviewEmailSent": true,
+    "reportPath": "C:\\Users\\LAKSHITA\\Desktop\\DESKTOPP\\vendor-project\\backend\\reports\\issue-report-1776750948361.pdf",
+    "reason": "Review email sent",
+    "issuesCount": 6,
+    "validationStatus": "needs_review",
+    "error": null
+  }
+}

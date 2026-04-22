@@ -1,0 +1,28 @@
+{
+  "submissionId": "sub_1776752745113_095af8",
+  "createdAt": "2026-04-21T06:25:45.113Z",
+  "updatedAt": "2026-04-21T06:25:48.220Z",
+  "status": "processing",
+  "source": "drive-folder",
+  "driveFolderId": "1r4OvGuUSEzbHkttbiqT-hBqZVO1yCYLO",
+  "driveFolderLink": "https://drive.google.com/drive/folders/1r4OvGuUSEzbHkttbiqT-hBqZVO1yCYLO",
+  "uploadedFiles": [],
+  "submission": {
+    "name": "test",
+    "phone": "89",
+    "email": "abc@gmail.com",
+    "constitution": "Proprietorship",
+    "vendorType": "Trader",
+    "product": "Test"
+  },
+  "processing": {
+    "startedAt": "2026-04-21T06:25:48.220Z",
+    "completedAt": null,
+    "reviewEmailSent": false,
+    "reportPath": null,
+    "reason": null,
+    "issuesCount": null,
+    "validationStatus": null,
+    "error": null
+  }
+}

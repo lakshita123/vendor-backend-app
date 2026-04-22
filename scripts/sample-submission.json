@@ -1,0 +1,36 @@
+{
+  "submission": {
+    "name": "Test Vendor",
+    "phone": "9999999999",
+    "email": "test@example.com",
+    "constitution": "Proprietorship",
+    "vendorType": "Recycler",
+    "product": "PET Bottles",
+    "hsn": "1234",
+    "geoAddress": "Sector 62, Noida, Gautam Buddha Nagar, Uttar Pradesh, India",
+    "geoLatitude": "28.613939",
+    "geoLongitude": "77.209021",
+    "geoMapsUrl": "https://www.google.com/maps?q=28.613939,77.209021",
+    "geoCapturedAt": "15/04/2026, 04:15:00 pm"
+  },
+  "baseDir": "../Uploads",
+  "driveFolderLink": "https://drive.google.com/drive/folders/example",
+  "files": [
+    {
+      "fieldname": "company_gst",
+      "path": "1776197327321-GST Registration.pdf"
+    },
+    {
+      "fieldname": "pan",
+      "path": "1776168843336-PAN.pdf"
+    },
+    {
+      "fieldname": "aadhar",
+      "path": "1776197327266-ADHAR BACK.pdf"
+    },
+    {
+      "fieldname": "geo_tag_photo",
+      "path": "sample-geotag-photo.jpg"
+    }
+  ]
+}

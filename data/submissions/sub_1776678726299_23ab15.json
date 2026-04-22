@@ -1,0 +1,21 @@
+{
+  "submissionId": "sub_1776678726299_23ab15",
+  "createdAt": "2026-04-20T09:52:06.299Z",
+  "updatedAt": "2026-04-20T09:52:06.299Z",
+  "status": "received",
+  "source": "metadata-only",
+  "driveFolderId": null,
+  "driveFolderLink": null,
+  "uploadedFiles": [],
+  "submission": {},
+  "processing": {
+    "startedAt": null,
+    "completedAt": null,
+    "reviewEmailSent": false,
+    "reportPath": null,
+    "reason": null,
+    "issuesCount": null,
+    "validationStatus": null,
+    "error": null
+  }
+}

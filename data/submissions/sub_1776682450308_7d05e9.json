@@ -1,0 +1,95 @@
+{
+  "submissionId": "sub_1776682450308_7d05e9",
+  "createdAt": "2026-04-20T10:54:10.308Z",
+  "updatedAt": "2026-04-20T10:54:31.564Z",
+  "status": "completed",
+  "source": "frontend-upload",
+  "driveFolderId": "1k0QM9r5lawsEFK_vcwHyKuwz10T9S-lJ",
+  "driveFolderLink": "https://drive.google.com/drive/folders/1k0QM9r5lawsEFK_vcwHyKuwz10T9S-lJ",
+  "uploadedFiles": [
+    {
+      "fieldname": "geo_tag_photo",
+      "originalname": "1000234902.jpg",
+      "mimetype": "image/jpeg",
+      "size": 244223
+    },
+    {
+      "fieldname": "company_gst",
+      "originalname": "AA0711230141140_RC08112023 (1).pdf",
+      "mimetype": "application/pdf",
+      "size": 80970
+    },
+    {
+      "fieldname": "msme",
+      "originalname": "Print _ Udyam Registration Certificate-Updated Om Plastic.pdf",
+      "mimetype": "application/pdf",
+      "size": 300284
+    },
+    {
+      "fieldname": "aadhar",
+      "originalname": "1000234908.jpg",
+      "mimetype": "image/jpeg",
+      "size": 144919
+    },
+    {
+      "fieldname": "pan",
+      "originalname": "1000234910.jpg",
+      "mimetype": "image/jpeg",
+      "size": 97945
+    },
+    {
+      "fieldname": "cheque",
+      "originalname": "1000234911.jpg",
+      "mimetype": "image/jpeg",
+      "size": 162394
+    },
+    {
+      "fieldname": "gstr3b_1",
+      "originalname": "GSTR3B_07AGHPH3398D2ZD_012026.pdf",
+      "mimetype": "application/pdf",
+      "size": 39690
+    },
+    {
+      "fieldname": "gstr3b_2",
+      "originalname": "GSTR3B_07AGHPH3398D2ZD_022026.pdf",
+      "mimetype": "application/pdf",
+      "size": 39613
+    },
+    {
+      "fieldname": "gstr3b_3",
+      "originalname": "GSTR3B_07AGHPH3398D2ZD_032026.pdf",
+      "mimetype": "application/pdf",
+      "size": 39587
+    },
+    {
+      "fieldname": "gst_bank",
+      "originalname": "1000234903.jpg",
+      "mimetype": "image/jpeg",
+      "size": 111892
+    }
+  ],
+  "submission": {
+    "name": "Lakshita Singla",
+    "phone": "8837803720",
+    "email": "lilliving02@gmail.com",
+    "constitution": "Proprietorship",
+    "vendorType": "Trader",
+    "product": "Granules",
+    "hsn": "5678",
+    "geoAddress": "Noida City Centre, Noida, Dadri, Gautam Buddha Nagar, Uttar Pradesh, 201303, India",
+    "geoLatitude": "28.573310",
+    "geoLongitude": "77.352930",
+    "geoMapsUrl": "https://www.google.com/maps?q=28.573310%2C77.352930",
+    "geoCapturedAt": "20/4/2026, 4:23:21 pm"
+  },
+  "processing": {
+    "startedAt": "2026-04-20T10:54:13.350Z",
+    "completedAt": "2026-04-20T10:54:31.564Z",
+    "reviewEmailSent": true,
+    "reportPath": "C:\\Users\\LAKSHITA\\Desktop\\DESKTOPP\\vendor-project\\backend\\reports\\issue-report-1776682467098.pdf",
+    "reason": "Review email sent",
+    "issuesCount": 8,
+    "validationStatus": "needs_review",
+    "error": null
+  }
+}
