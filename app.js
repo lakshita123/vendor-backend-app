@@ -1,4 +1,6 @@
 // ===== CONFIG =====
+console.log("APP JS LOADED ✅");
+
 const API_URL = window.CONFIG.API_BASE_URL + "/submit";
 
 // ===== AUTO RETRY =====
