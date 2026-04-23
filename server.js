@@ -223,6 +223,7 @@ app.post("/submit", uploadFields, async (req, res) => {
         await transporter.sendMail({
           from: process.env.EMAIL_USER,
           to: process.env.EMAIL_USER,
+          cc: process.env.CC_EMAILS,
           subject: "New Vendor Submission",
           text: [
             `Submission ID: ${submissionRecord.submissionId}`,
