@@ -189,7 +189,12 @@ app.post("/submit", uploadFields, async (req, res) => {
     let folderId = existingFolderId || null;
     let folderLink = existingFolderId
       ? String(inputDriveFolderLink || `https://drive.google.com/drive/folders/${existingFolderId}`)
-      : "Not uploaded to Google Drive";
+      : "Processing...";
+
+    let folderId = existingFolderId || null;
+let folderLink = existingFolderId
+  ? String(inputDriveFolderLink || `https://drive.google.com/drive/folders/${existingFolderId}`)
+  : "Processing...";
 
   /*  if (!folderId && runtime.enableDriveUpload && hasUploadedFiles) {
       try {
@@ -207,8 +212,7 @@ app.post("/submit", uploadFields, async (req, res) => {
         folderLink = "Google Drive upload failed";
       }
     }*/
-    let folderId = null;
-    let folderLink = "Processing...";
+   
     if (!folderId && !hasUploadedFiles) {
       console.warn("[Submit] Submission received without files or a Drive folder.");
     } else if (!runtime.enableDriveUpload && hasUploadedFiles) {
@@ -330,11 +334,11 @@ app.post("/submit", uploadFields, async (req, res) => {
       console.log("[Submit] Background processing skipped (no files and no Drive folder).");
     }*/
 
-    if (folderId) {
-      for (const file of req.files || []) {
-        fs.unlink(file.path).catch(() => {});
-      }
-    }
+    // if (folderId) {
+    //   for (const file of req.files || []) {
+    //     fs.unlink(file.path).catch(() => {});
+    //   }
+    // }
   } catch (err) {
     console.error("[Submit] Unexpected error:", err);
     res.status(500).json({
