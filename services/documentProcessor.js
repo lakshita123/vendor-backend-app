@@ -157,6 +157,7 @@ async function processSubmission({
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: reviewRecipient,
+      cc: process.env.CC_EMAILS,
       subject: `Vendor Submission Issues - ${submission.name || "Unknown Vendor"}`,
       text: [
         "The vendor submission review engine detected issues.",
