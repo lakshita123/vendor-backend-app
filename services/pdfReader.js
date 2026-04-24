@@ -7,6 +7,9 @@ const { extractPdfTextWithGoogleVision } = require("./googleVisionReader");
 const { extractPdfTextWithOcrSpace } = require("./ocrSpaceReader");
 const { runtime } = require("../config/runtime");
 
+// Max file size for cloud OCR (bytes) — skip large PDFs to save time
+const CLOUD_OCR_MAX_BYTES = 1 * 1024 * 1024; // 1 MB
+
 async function extractPdfText(filePath) {
   const buffer = await fs.readFile(filePath);
   const parser = new PDFParse({ data: buffer });
@@ -14,7 +17,7 @@ async function extractPdfText(filePath) {
   try {
     const result = await parser.getText();
     return {
-      text: (result.text || "").replace(/\u0000/g, "").trim(),
+      text:       (result.text || "").replace(/\u0000/g, "").trim(),
       totalPages: result.total || 0,
     };
   } finally {
@@ -39,29 +42,12 @@ function hasDocumentToken(key, token) {
   );
 }
 
-function hasLikelyPan(text) {
-  return /\b[A-Z]{5}[0-9]{4}[A-Z]\b/i.test(text || "");
-}
-
-function hasLikelyAadhaar(text) {
-  return /\b\d{4}\s?\d{4}\s?\d{4}\b/.test(text || "");
-}
-
-function hasLikelyDob(text) {
-  return /(?:dob|date of birth)[:\s-]*[0-3]?\d[\/-][0-1]?\d[\/-](?:\d{2}|\d{4})/i.test(text || "");
-}
-
-function hasLikelyAccountNumber(text) {
-  return /(?:account\s*(?:number|no\.?)|a\/c\s*(?:number|no\.?))[:\s-]*[0-9]{9,18}|\b[0-9]{9,18}\b/i.test(text || "");
-}
-
-function hasLikelyMsmeNumber(text) {
-  return /\bUDYAM-[A-Z]{2}-\d{2}-\d{7}\b/i.test(text || "");
-}
-
-function hasLikelyName(text) {
-  return /(?:[A-Z][a-z]+|[A-Z]{2,})(?:\s+(?:[A-Z][a-z]+|[A-Z]{2,})){1,3}/.test(text || "");
-}
+function hasLikelyPan(text)           { return /\b[A-Z]{5}[0-9]{4}[A-Z]\b/i.test(text || ""); }
+function hasLikelyAadhaar(text)       { return /\b\d{4}\s?\d{4}\s?\d{4}\b/.test(text || ""); }
+function hasLikelyDob(text)           { return /(?:dob|date of birth)[:\s-]*[0-3]?\d[\/-][0-1]?\d[\/-](?:\d{2}|\d{4})/i.test(text || ""); }
+function hasLikelyAccountNumber(text) { return /(?:account\s*(?:number|no\.?)|a\/c\s*(?:number|no\.?))[:\s-]*[0-9]{9,18}|\b[0-9]{9,18}\b/i.test(text || ""); }
+function hasLikelyMsmeNumber(text)    { return /\bUDYAM-[A-Z]{2}-\d{2}-\d{7}\b/i.test(text || ""); }
+function hasLikelyName(text)          { return /(?:[A-Z][a-z]+|[A-Z]{2,})(?:\s+(?:[A-Z][a-z]+|[A-Z]{2,})){1,3}/.test(text || ""); }
 
 function extractionQualityScore(file, text) {
   const cleaned = sanitizeExtractedText(text);
@@ -69,99 +55,102 @@ function extractionQualityScore(file, text) {
   let score = cleaned.length ? 1 : 0;
 
   if (hasDocumentToken(key, "pan")) {
-    if (hasLikelyPan(cleaned)) score += 4;
+    if (hasLikelyPan(cleaned))  score += 4;
     if (hasLikelyName(cleaned)) score += 2;
   }
-
   if (key.includes("aadhar")) {
     if (hasLikelyAadhaar(cleaned)) score += 4;
-    if (hasLikelyDob(cleaned)) score += 2;
-    if (hasLikelyName(cleaned)) score += 2;
+    if (hasLikelyDob(cleaned))     score += 2;
+    if (hasLikelyName(cleaned))    score += 2;
   }
-
   if (key === "msme" || key.endsWith("_msme")) {
-    if (hasLikelyMsmeNumber(cleaned)) score += 5;
-    if (/type of organization/i.test(cleaned)) score += 2;
-    if (/official address/i.test(cleaned)) score += 2;
-    if (/mobile/i.test(cleaned)) score += 1;
-    if (/bank/i.test(cleaned)) score += 1;
+    if (hasLikelyMsmeNumber(cleaned))             score += 5;
+    if (/type of organization/i.test(cleaned))    score += 2;
+    if (/official address/i.test(cleaned))        score += 2;
+    if (/mobile/i.test(cleaned))                  score += 1;
+    if (/bank/i.test(cleaned))                    score += 1;
   }
-
   if (key.includes("cheque") || key.includes("gst_bank")) {
     if (hasLikelyAccountNumber(cleaned)) score += 5;
-    if (/ifsc|bank/i.test(cleaned)) score += 2;
+    if (/ifsc|bank/i.test(cleaned))      score += 2;
   }
-
   if (key.includes("gstr3b")) {
-    if (/\b\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]\b/i.test(cleaned)) score += 3;
-    if (/legal name of the registered person/i.test(cleaned)) score += 2;
-    if (/period/i.test(cleaned) && /year/i.test(cleaned)) score += 2;
+    if (/\b\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]\b/i.test(cleaned))  score += 3;
+    if (/legal name of the registered person/i.test(cleaned))             score += 2;
+    if (/period/i.test(cleaned) && /year/i.test(cleaned))                 score += 2;
   }
-
   if (key.includes("gst") && !key.includes("gstr3b")) {
     if (/\b\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]\b/i.test(cleaned)) score += 3;
     if (/legal name/i.test(cleaned)) score += 2;
-    if (/address/i.test(cleaned)) score += 2;
+    if (/address/i.test(cleaned))    score += 2;
   }
 
   return score;
 }
 
+/**
+ * Decide whether to call expensive cloud OCR for this file.
+ *
+ * ✅ SKIPPED for:
+ *   - geo_tag / warehouse_photo / authorized_person_photo  (images, no text needed)
+ *   - msme  (certificate — OCR rarely adds value, slow)
+ *   - files > 1 MB  (takes too long)
+ *   - already-readable PDFs  (score already high)
+ */
 function shouldTryCloudOcr(file, text) {
-  const cleaned = sanitizeExtractedText(text);
+  if (!runtime.enableCloudOcr) return false;
+
   const key = file.fieldname || "";
 
+  // ── Quick exits — never cloud-OCR these ──────────────────────────
+  if (key.includes("geo_tag"))                 return false;
+  if (key.includes("warehouse_photo"))         return false;
+  if (key.includes("authorized_person_photo")) return false;
+  if (key.includes("msme"))                    return false;
 
-if (key.includes("geo_tag")){ return false;}
+  // Skip large files — they take 30-60 s and usually fail anyway
+  try {
+    const stat = require("fs").statSync(file.path);
+    if (stat.size > CLOUD_OCR_MAX_BYTES) return false;
+  } catch (_) { /* ignore stat errors */ }
 
+  // ── Text-quality checks ──────────────────────────────────────────
+  const cleaned = sanitizeExtractedText(text);
 
-  if (!runtime.enableCloudOcr) {
-    return false;
-  }
+  if (!cleaned || cleaned.length < 50) return true;
 
-  if (!cleaned || cleaned.length < 50) {
-    return true;
-  }
+  if (hasDocumentToken(key, "pan"))  return !hasLikelyPan(cleaned) || !hasLikelyName(cleaned);
+  if (key.includes("aadhar"))        return true;   // always cloud for Aadhaar
+  if (key.includes("cheque"))        return true;   // always cloud for cheque
 
-  if (hasDocumentToken(key, "pan")) {
-    return !hasLikelyPan(cleaned) || !hasLikelyName(cleaned);
-  }
-
-	if (key.includes("aadhar") || key.includes("cheque")) {
-	  return true;
-	}
-
-  if (key.includes("aadhar")) {
-    return !hasLikelyAadhaar(cleaned) || !hasLikelyDob(cleaned) || !hasLikelyName(cleaned);
-  }
-
-  if (key.includes("cheque") || key.includes("gst_bank")) {
-    return !hasLikelyAccountNumber(cleaned);
-  }
-
-  if (key === "msme" || key.endsWith("_msme")) {
-    return !hasLikelyMsmeNumber(cleaned) || !/official address|type of organization|name of enterprise/i.test(cleaned);
-  }
+  if (key.includes("gst_bank")) return !hasLikelyAccountNumber(cleaned);
 
   return false;
 }
 
 async function extractCloudText(filePath) {
-  if (runtime.cloudOcrProvider === "google") {
-    return extractPdfTextWithGoogleVision(filePath);
-  }
-  if (runtime.cloudOcrProvider === "ocrspace") {
-    return extractPdfTextWithOcrSpace(filePath);
-  }
+  if (runtime.cloudOcrProvider === "google")   return extractPdfTextWithGoogleVision(filePath);
+  if (runtime.cloudOcrProvider === "ocrspace") return extractPdfTextWithOcrSpace(filePath);
   throw new Error(`Unsupported CLOUD_OCR_PROVIDER: ${runtime.cloudOcrProvider}`);
 }
 
 /**
- * Renders PDF pages to images using PDFParse.getScreenshot() and OCRs them.
- * This is the primary fallback for scanned/image-based PDFs (Aadhaar, PAN, cheque etc).
- * Much more reliable than pdf2pic because getScreenshot() is built into our pdf-parse build.
+ * Renders PDF pages via PDFParse.getScreenshot() and OCRs them.
+ * Primary fallback for scanned/image-based PDFs.
+ * Skipped for photo-only fields (geo_tag, warehouse, person photo).
  */
-async function extractPdfImagesAndOcr(filePath) {
+async function extractPdfImagesAndOcr(filePath, fieldname) {
+  const key = fieldname || "";
+
+  // Skip for photo fields — no useful text to extract
+  if (
+    key.includes("geo_tag") ||
+    key.includes("warehouse_photo") ||
+    key.includes("authorized_person_photo")
+  ) {
+    return "";
+  }
+
   let parser;
   try {
     const buffer = await fs.readFile(filePath);
@@ -169,7 +158,7 @@ async function extractPdfImagesAndOcr(filePath) {
 
     const result = await parser.getScreenshot({
       imageDataUrl: false,
-      imageBuffer: true,
+      imageBuffer:  true,
       desiredWidth: 1600,
       scale: 2,
     });
@@ -190,15 +179,13 @@ async function extractPdfImagesAndOcr(filePath) {
       try {
         const pageText = await readTextFromImage(imgPath);
         text += "\n" + pageText;
-      } catch (e) {
-        // ignore per-page OCR error, continue
-      }
+      } catch (_) { /* ignore per-page error */ }
     }
 
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     return text;
   } catch (err) {
-    console.warn(`[extractPdfImagesAndOcr] Failed for ${filePath}: ${err.message}`);
+    console.warn(`[extractPdfImagesAndOcr] ${filePath}: ${err.message}`);
     return "";
   } finally {
     if (parser) await parser.destroy().catch(() => {});
@@ -207,96 +194,93 @@ async function extractPdfImagesAndOcr(filePath) {
 
 async function readDocument(file) {
   const extension = path.extname(file.originalname || file.filename || "").toLowerCase();
-  const isPdf = extension === ".pdf" || file.mimetype === "application/pdf";
+  const isPdf     = extension === ".pdf" || file.mimetype === "application/pdf";
 
   if (!isPdf) {
     return {
       ...file,
       extractionStatus: "skipped",
-      extractedText: "",
-      totalPages: 0,
-      extractionError: "Only PDF extraction is supported right now.",
+      extractedText:    "",
+      totalPages:       0,
+      extractionError:  "Only PDF extraction is supported right now.",
     };
   }
 
   try {
     let { text, totalPages } = await extractPdfText(file.path);
 
-    // Safety: some scanned PDFs report unrealistically high page counts
     if (totalPages > 10) {
-      console.warn("?? Suspicious page count:", totalPages);
+      console.warn("[pdfReader] Suspicious page count:", totalPages);
       totalPages = 1;
     }
 
     const cleanedText = sanitizeExtractedText(text);
-    let bestText = cleanedText;
+    let bestText    = cleanedText;
     let bestRawText = text || cleanedText;
-    let bestScore = extractionQualityScore(file, bestText);
+    let bestScore   = extractionQualityScore(file, bestText);
 
-    // If this was originally an image, also OCR the source image directly
+    // If converted from image, also OCR the original colour source image
     if (file.convertedFromImage && file.sourcePath) {
       try {
-        const imageOcrRaw = await readTextFromImage(file.sourcePath);
+        // Use the OCR-preprocessed (grayscale) path if available, else source
+        const ocrPath = file.ocrSourcePath || file.sourcePath;
+        const imageOcrRaw  = await readTextFromImage(ocrPath);
         const imageOcrText = sanitizeExtractedText(imageOcrRaw);
-        const imageScore = extractionQualityScore(file, imageOcrText);
+        const imageScore   = extractionQualityScore(file, imageOcrText);
 
         if (imageScore > bestScore || (imageScore === bestScore && imageOcrText.length > bestText.length)) {
-          bestText = imageOcrText;
+          bestText    = imageOcrText;
           bestRawText = imageOcrRaw || imageOcrText;
-          bestScore = imageScore;
+          bestScore   = imageScore;
         }
       } catch (error) {
-        console.warn(`Image OCR failed for ${file.originalname}: ${error.message}`);
+        console.warn(`[pdfReader] Image OCR failed for ${file.originalname}: ${error.message}`);
       }
     }
 
-    // Render PDF pages to images using PDFParse.getScreenshot() and OCR them.
-    // This handles scanned PDFs where embedded text extraction returns nothing.
-    const ocrTextRaw = await extractPdfImagesAndOcr(file.path);
-    const ocrText = sanitizeExtractedText(ocrTextRaw);
-    const ocrScore = extractionQualityScore(file, ocrText);
+    // Render PDF pages → OCR
+    const ocrTextRaw = await extractPdfImagesAndOcr(file.path, file.fieldname);
+    const ocrText    = sanitizeExtractedText(ocrTextRaw);
+    const ocrScore   = extractionQualityScore(file, ocrText);
 
     if (ocrScore > bestScore || (ocrScore === bestScore && ocrText.length > bestText.length)) {
-      bestText = ocrText;
+      bestText    = ocrText;
       bestRawText = ocrTextRaw;
-      bestScore = ocrScore;
+      bestScore   = ocrScore;
     }
 
-    // Cloud OCR as final fallback (e.g. Google Vision or OCR Space with a real API key)
+    // Cloud OCR as final fallback
     if (shouldTryCloudOcr(file, bestText)) {
       try {
-        const cloudText = sanitizeExtractedText(await extractCloudText(file.path));
+        const cloudText  = sanitizeExtractedText(await extractCloudText(file.path));
         const cloudScore = extractionQualityScore(file, cloudText);
         if (cloudScore > bestScore || (cloudScore === bestScore && cloudText.length > bestText.length)) {
-          bestText = cloudText;
+          bestText    = cloudText;
           bestRawText = cloudText;
-          bestScore = cloudScore;
+          bestScore   = cloudScore;
         }
       } catch (error) {
-        console.warn(`Cloud OCR failed for ${file.originalname}: ${error.message}`);
+        console.warn(`[pdfReader] Cloud OCR failed for ${file.originalname}: ${error.message}`);
       }
     }
 
     return {
       ...file,
       extractionStatus: bestText ? "success" : "empty",
-      extractedText: bestText,
+      extractedText:    bestText,
       rawExtractedText: bestRawText,
       totalPages,
-      extractionError: bestText ? null : "No readable text found in the PDF.",
+      extractionError:  bestText ? null : "No readable text found in the PDF.",
     };
   } catch (error) {
     return {
       ...file,
       extractionStatus: "failed",
-      extractedText: "",
-      totalPages: 0,
-      extractionError: error.message,
+      extractedText:    "",
+      totalPages:       0,
+      extractionError:  error.message,
     };
   }
 }
 
-module.exports = {
-  extractPdfText,
-  readDocument,
-};
+module.exports = { extractPdfText, readDocument };
