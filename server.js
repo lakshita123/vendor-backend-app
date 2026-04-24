@@ -289,12 +289,16 @@ let folderLink = existingFolderId
         finalFolderId = await createFolder(`${name}_${Date.now()}`);
 
         for (const file of preparedFiles) {
-          const ext = path.extname(file.originalname || "");
-          await uploadFile(
-            { ...file, originalname: `${file.fieldname}${ext}` },
-            finalFolderId
-          );
-        }
+  const ext = path.extname(file.originalname || "");
+
+  await uploadFile(
+    {
+      ...file,
+      originalname: file.fieldname + ext
+    },
+    finalFolderId
+  );
+}
 
         finalFolderLink = await makePublic(finalFolderId);
       } catch (err) {
