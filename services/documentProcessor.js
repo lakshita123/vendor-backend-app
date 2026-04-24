@@ -11,12 +11,9 @@ const { updateSubmissionRecord } = require("./submissionStore");
 
 
 async function runFaceComparisons(files) {
-  // ✅ CHANGED: Use authorized_person_with_warehouse_photo instead of geo_tag_photo
   const geoTagFile = files.find(
     (f) => f.fieldname === "authorized_person_with_warehouse_photo"
   );
-
-  // ✅ SAFETY: If image not present, return null gracefully — do NOT throw
   if (!geoTagFile) return null;
 
   const identityFiles = [];
