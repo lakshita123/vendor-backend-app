@@ -11,7 +11,9 @@ const { updateSubmissionRecord } = require("./submissionStore");
 
 
 async function runFaceComparisons(files) {
-  const geoTagFile = files.find((f) => f.fieldname === "geo_tag_photo");
+  const geoTagFile = files.find(
+    (f) => f.fieldname === "authorized_person_with_warehouse_photo"
+  );
   if (!geoTagFile) return null;
 
   const identityFiles = [];
