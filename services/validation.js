@@ -610,15 +610,16 @@ function extractAadhaarData(text) {
 
   const address = extractAddressBlock(text);
 
-  if (aadhaarNameCandidate) {
-  aadhaarNameCandidate = aadhaarNameCandidate
-    .replace(/(DOB|MALE|FEMALE|YEAR OF BIRTH).*/gi, "")
-    .replace(/[^A-Z\s]/gi, "")
-    .trim();
-}
+  let aadhaarNameCleaned = aadhaarNameCandidate || "";
+  if (aadhaarNameCleaned) {
+    aadhaarNameCleaned = aadhaarNameCleaned
+      .replace(/(DOB|MALE|FEMALE|YEAR OF BIRTH).*/gi, "")
+      .replace(/[^A-Z\s]/gi, "")
+      .trim();
+  }
 
   return {
-    name: bestTrailingName(aadhaarNameCandidate, 2),
+    name: bestTrailingName(aadhaarNameCleaned || aadhaarNameCandidate, 2),
     aadhaarNumber: extractAadhaar(text),
     dob: extractDateOfBirth(text),
     address,
@@ -685,6 +686,19 @@ function extractMsmeData(text) {
   };
 }
 
+function extractCtoData(text) {
+  const cleaned = normalizeText(text);
+  const issueDate =
+    extractGroup(/(?:issue\s*date|date\s*of\s*issue|issued\s*on)[:\s]+([0-9]{1,2}[\/-][0-9]{1,2}[\/-][0-9]{2,4})/i, cleaned);
+  const expiryDate =
+    extractGroup(/(?:valid(?:\s*till|\s*upto|\s*up\s*to)?|expir(?:y|es?|ation)[:\s]*date|validity)[:\s]+([0-9]{1,2}[\/-][0-9]{1,2}[\/-][0-9]{2,4})/i, cleaned);
+  const authorityName =
+    extractGroup(/((?:state|central)?\s*pollution\s*control\s*board[^,\n]{0,60})/i, cleaned) ||
+    extractGroup(/(SPCB[^,\n]{0,40})/i, cleaned) ||
+    extractGroup(/(CPCB[^,\n]{0,40})/i, cleaned);
+  return { issueDate, expiryDate, authorityName };
+}
+
 function isMissingValue(value) {
   if (value === null || value === undefined) {
     return true;
@@ -744,11 +758,17 @@ function buildDocumentMetadata(document, submission = {}) {
     Object.assign(extractedData, extractMsmeData(rawText));
   }
 
+  // ✅ NEW: CTO / CTE / PWP
+  const isCtoDocument = key === "cto" || key.includes("_cto") || key === "cte" || key.includes("_cte") || key === "pwp" || key.includes("_pwp");
+  if (isCtoDocument) {
+    Object.assign(extractedData, extractCtoData(rawText));
+  }
+
   if (key.startsWith("gstr3b_")) {
     Object.assign(extractedData, extractGstr3bData(rawText));
   }
 
-  if (key === "geo_tag_photo") {
+  if (key === "geo_tag_photo" || key === "authorized_person_with_warehouse_photo") {
     Object.assign(extractedData, {
       geoAddress: normalizeText(submission.geoAddress),
       geoLatitude: normalizeText(submission.geoLatitude),
@@ -1233,7 +1253,10 @@ function validateSubmission(submission, documents, faceResults) {
   }
 
   extractedDocuments.forEach((document) => {
-    if (document.key === "geo_tag_photo" && document.extractionStatus !== "success") {
+    if (
+      (document.key === "geo_tag_photo" || document.key === "authorized_person_with_warehouse_photo") &&
+      document.extractionStatus !== "success"
+    ) {
       return;
     }
 
@@ -1436,6 +1459,54 @@ function validateSubmission(submission, documents, faceResults) {
   }
 
   // NEW
+  // ✅ NEW: Private Limited specific checks
+  if (submission && submission.constitution === "Private Limited") {
+    // Company PAN
+    const companyPanDoc = extractedDocuments.find((doc) => doc.key === "company_pan") || null;
+    if (!companyPanDoc) {
+      pushIssue(issues, "high", "Company PAN not uploaded", "Company PAN is required for Private Limited vendors.");
+    } else if (companyPanDoc.extractionStatus !== "success") {
+      pushIssue(issues, "medium", "Company PAN unreadable", `${companyPanDoc.originalname} could not be read automatically.`);
+    } else if (!companyPanDoc.identifiers.pan) {
+      pushIssue(issues, "medium", "PAN number not found in company_pan", `${companyPanDoc.originalname} did not contain a detectable PAN number.`);
+    }
+
+    // CIN
+    const cinDoc = extractedDocuments.find((doc) => doc.key === "cin" || doc.key.endsWith("_cin")) || null;
+    if (!cinDoc) {
+      pushIssue(issues, "high", "CIN certificate not uploaded", "CIN certificate is required for Private Limited vendors.");
+    } else if (cinDoc.extractionStatus !== "success") {
+      pushIssue(issues, "medium", "CIN certificate unreadable", `${cinDoc.originalname} could not be read automatically.`);
+    } else if (!cinDoc.identifiers.cin) {
+      pushIssue(issues, "medium", "CIN not found in CIN document", `${cinDoc.originalname} did not contain a detectable CIN number.`);
+    }
+
+    // CTO
+    const ctoDoc = extractedDocuments.find((doc) =>
+      doc.key === "cto" || doc.key.includes("_cto") ||
+      doc.key === "cte" || doc.key.includes("_cte")
+    ) || null;
+    if (!ctoDoc) {
+      pushIssue(issues, "high", "CTO certificate not uploaded", "CTO (Consent to Operate) is required for Private Limited vendors.");
+    } else if (ctoDoc.extractionStatus !== "success") {
+      pushIssue(issues, "medium", "CTO certificate unreadable", `${ctoDoc.originalname} could not be read automatically.`);
+    } else {
+      // Check expiry
+      if (ctoDoc.extractedData && ctoDoc.extractedData.expiryDate) {
+        try {
+          const parts = ctoDoc.extractedData.expiryDate.split(/[\/\-]/);
+          if (parts.length === 3) {
+            const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+            const expiry = new Date(`${year}-${parts[1].padStart(2,"0")}-${parts[0].padStart(2,"0")}`);
+            if (!isNaN(expiry.getTime()) && expiry < new Date()) {
+              pushIssue(issues, "high", "CTO certificate expired", `CTO valid till ${ctoDoc.extractedData.expiryDate} has expired.`);
+            }
+          }
+        } catch (_) {}
+      }
+    }
+  }
+
 	const validationChecks = buildValidationChecks(extractedDocuments, issues, submission);
 	const faceChecks = buildFaceChecks(faceResults || [], issues);
 	const allChecks = [...validationChecks, ...faceChecks];
