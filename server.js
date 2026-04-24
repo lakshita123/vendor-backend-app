@@ -23,6 +23,10 @@ const {
 } = require("./services/submissionStore");
 
 const app = express();
+app.use((req, res, next) => {
+  req.setTimeout(0); // prevent timeout
+  next();
+});
 
 const allowedOrigins = process.env.FRONTEND_ORIGIN
   ? process.env.FRONTEND_ORIGIN.split(",").map((o) => o.trim())
@@ -58,7 +62,13 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
 });
 
-const upload = multer({ storage });
+//const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 20 * 1024 * 1024 // 20MB
+  }
+});
 const uploadFields = upload.any();
 
 function hasValue(value) {
@@ -179,9 +189,14 @@ app.post("/submit", uploadFields, async (req, res) => {
     let folderId = existingFolderId || null;
     let folderLink = existingFolderId
       ? String(inputDriveFolderLink || `https://drive.google.com/drive/folders/${existingFolderId}`)
-      : "Not uploaded to Google Drive";
+      : "Processing...";
 
-    if (!folderId && runtime.enableDriveUpload && hasUploadedFiles) {
+    let folderId = existingFolderId || null;
+let folderLink = existingFolderId
+  ? String(inputDriveFolderLink || `https://drive.google.com/drive/folders/${existingFolderId}`)
+  : "Processing...";
+
+  /*  if (!folderId && runtime.enableDriveUpload && hasUploadedFiles) {
       try {
         const preparedFiles = await prepareUploadedFiles(req.files || []);
         folderId = await createFolder(`${name}_${constitution}_${vendorType}_${Date.now()}`);
@@ -196,7 +211,9 @@ app.post("/submit", uploadFields, async (req, res) => {
         console.error("[Drive] Upload failed:", driveErr);
         folderLink = "Google Drive upload failed";
       }
-    } else if (!folderId && !hasUploadedFiles) {
+    }*/
+   
+    if (!folderId && !hasUploadedFiles) {
       console.warn("[Submit] Submission received without files or a Drive folder.");
     } else if (!runtime.enableDriveUpload && hasUploadedFiles) {
       console.log("[LOCAL TEST] Drive upload skipped.");
@@ -258,7 +275,50 @@ app.post("/submit", uploadFields, async (req, res) => {
       processingSource: source,
     });
 
-    if (folderId || hasUploadedFiles) {
+    setImmediate(async () => {
+  try {
+    console.log("Background processing started");
+
+    let finalFolderId = null;
+    let finalFolderLink = "Processing...";
+
+    // STEP 1: Drive Upload (moved here)
+    if (runtime.enableDriveUpload && hasUploadedFiles) {
+      try {
+        const preparedFiles = await prepareUploadedFiles(req.files || []);
+        finalFolderId = await createFolder(`${name}_${Date.now()}`);
+
+        for (const file of preparedFiles) {
+          const ext = path.extname(file.originalname || "");
+          await uploadFile(
+            { ...file, originalname: `${file.fieldname}${ext}` },
+            finalFolderId
+          );
+        }
+
+        finalFolderLink = await makePublic(finalFolderId);
+      } catch (err) {
+        console.error("Drive error:", err);
+      }
+    }
+
+    // STEP 2: Process submission
+    await processSubmission({
+      submission,
+      folderId: finalFolderId,
+      files: finalFolderId ? undefined : req.files || [],
+      transporter,
+      driveFolderLink: finalFolderLink,
+      submissionId: submissionRecord.submissionId,
+    });
+
+    console.log("Background processing done");
+
+  } catch (err) {
+    console.error("Background error:", err);
+  }
+});
+    /*if (folderId || hasUploadedFiles) {
       processSubmission({
         submission,
         folderId,
@@ -269,15 +329,16 @@ app.post("/submit", uploadFields, async (req, res) => {
       }).catch((err) => {
         console.error("[Background] Document processing failed:", err);
       });
-    } else {
+    }
+    else {
       console.log("[Submit] Background processing skipped (no files and no Drive folder).");
-    }
+    }*/
 
-    if (folderId) {
-      for (const file of req.files || []) {
-        fs.unlink(file.path).catch(() => {});
-      }
-    }
+    // if (folderId) {
+    //   for (const file of req.files || []) {
+    //     fs.unlink(file.path).catch(() => {});
+    //   }
+    // }
   } catch (err) {
     console.error("[Submit] Unexpected error:", err);
     res.status(500).json({
