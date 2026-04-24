@@ -191,10 +191,7 @@ app.post("/submit", uploadFields, async (req, res) => {
       ? String(inputDriveFolderLink || `https://drive.google.com/drive/folders/${existingFolderId}`)
       : "Processing...";
 
-    let folderId = existingFolderId || null;
-let folderLink = existingFolderId
-  ? String(inputDriveFolderLink || `https://drive.google.com/drive/folders/${existingFolderId}`)
-  : "Processing...";
+ 
 
   /*  if (!folderId && runtime.enableDriveUpload && hasUploadedFiles) {
       try {
