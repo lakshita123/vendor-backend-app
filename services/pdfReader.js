@@ -143,9 +143,16 @@ function shouldTryCloudOcr(file, text) {
   return false;
 }
 
-async function extractCloudText(filePath) {
+async function extractCloudText(filePath, fieldname) {
+  const key = fieldname || "";
   if (runtime.cloudOcrProvider === "google")   return extractPdfTextWithGoogleVision(filePath);
-  if (runtime.cloudOcrProvider === "ocrspace") return extractPdfTextWithOcrSpace(filePath);
+  if (runtime.cloudOcrProvider === "ocrspace") {
+    // Throttle: OCR.space free/basic plan = ~1 req/sec
+    await new Promise(r => setTimeout(r, 1200));
+    // Aadhaar has coloured background — Engine 1 handles it better than Engine 2
+    const ocrEngine = key.includes("aadhar") ? "1" : "2";
+    return extractPdfTextWithOcrSpace(filePath, { ocrEngine });
+  }
   throw new Error(`Unsupported CLOUD_OCR_PROVIDER: ${runtime.cloudOcrProvider}`);
 }
 
@@ -268,7 +275,7 @@ async function readDocument(file) {
     // Cloud OCR as final fallback
     if (shouldTryCloudOcr(file, bestText)) {
       try {
-        const cloudText  = sanitizeExtractedText(await extractCloudText(file.path));
+        const cloudText  = sanitizeExtractedText(await extractCloudText(file.path, file.fieldname));
         const cloudScore = extractionQualityScore(file, cloudText);
         if (cloudScore > bestScore || (cloudScore === bestScore && cloudText.length > bestText.length)) {
           bestText    = cloudText;
