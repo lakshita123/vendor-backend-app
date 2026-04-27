@@ -178,37 +178,13 @@ app.post("/submit", uploadFields, async (req, res) => {
     const existingFolderId = extractFolderId(inputDriveFolderId) || extractFolderId(inputDriveFolderLink);
     const hasUploadedFiles = uploadedFilesArr.length > 0;
 
-    let folderId   = existingFolderId || null;
-    let folderLink = existingFolderId
-      ? String(inputDriveFolderLink || `https://drive.google.com/drive/folders/${existingFolderId}`)
-      : "Not uploaded to Google Drive";
-
-    if (!folderId && runtime.enableDriveUpload && hasUploadedFiles) {
-      try {
-        const preparedFiles = await prepareUploadedFiles(uploadedFilesArr);
-        folderId = await createFolder(`${name}_${constitution}_${vendorType}_${Date.now()}`);
-
-        for (const file of preparedFiles) {
-          const ext = path.extname(file.originalname || "") || "";
-          // ✅ Drive upload uses the colour PDF/original path (file.path),
-          //    NOT the OCR-preprocessed grayscale path
-          await uploadFile({ ...file, originalname: `${file.fieldname}${ext}` }, folderId);
-        }
-
-        folderLink = await makePublic(folderId);
-      } catch (driveErr) {
-        console.error("[Drive] Upload failed:", driveErr);
-        folderLink = "Google Drive upload failed";
-      }
-    } else if (!folderId && !hasUploadedFiles) {
-      console.warn("[Submit] No files and no Drive folder received.");
-    } else if (!runtime.enableDriveUpload && hasUploadedFiles) {
-      console.log("[LOCAL TEST] Drive upload skipped.");
-    }
-
     const source = existingFolderId ? "drive-folder"
       : hasUploadedFiles ? "frontend-upload"
       : "metadata-only";
+
+    if (!existingFolderId && !hasUploadedFiles) {
+      console.warn("[Submit] No files and no Drive folder received.");
+    }
 
     const uploadedFileMeta = uploadedFilesArr.map(file => ({
       fieldname:    file.fieldname,
@@ -217,76 +193,132 @@ app.post("/submit", uploadFields, async (req, res) => {
       size:         file.size,
     }));
 
+    // ✅ FIX: Create record immediately — Drive upload runs in background
     const submissionRecord = await createSubmissionRecord({
       submission,
       source,
-      driveFolderId:   folderId,
-      driveFolderLink: folderId ? folderLink : null,
-      uploadedFiles:   uploadedFileMeta,
+      driveFolderId:   existingFolderId || null,
+      driveFolderLink: existingFolderId
+        ? String(inputDriveFolderLink || `https://drive.google.com/drive/folders/${existingFolderId}`)
+        : null,
+      uploadedFiles: uploadedFileMeta,
     });
 
-    if (runtime.enableSubmissionEmail) {
-      try {
-        await transporter.sendMail({
-          from:    process.env.EMAIL_USER,
-          to:      process.env.EMAIL_USER,
-          cc:      process.env.CC_EMAILS,
-          subject: "New Vendor Submission",
-          text: [
-            `Submission ID: ${submissionRecord.submissionId}`,
-            `Name: ${name}`,
-            `Phone: ${phone}`,
-            `Email: ${email}`,
-            `Constitution: ${constitution}`,
-            `Vendor Type: ${vendorType}`,
-            `Product: ${product}`,
-            `HSN: ${hsn}`,
-            `Geo Address (Warehouse): ${submission.geoAddress || "-"}`,
-            `Geo Latitude: ${submission.geoLatitude || "-"}`,
-            `Geo Longitude: ${submission.geoLongitude || "-"}`,
-            `Geo Captured At: ${submission.geoCapturedAt || "-"}`,
-            `Google Maps Link: ${submission.geoMapsUrl || "-"}`,
-            `Authorized Person Geo Address: ${submission.authorizedPersonGeoAddress || "-"}`,
-            "",
-            `Source: ${source}`,
-            `Drive Folder: ${folderLink}`,
-          ].join("\n"),
-        });
-      } catch (emailErr) {
-        console.error("[Email] Submission email failed:", emailErr);
-      }
-    } else {
-      console.log("[LOCAL TEST] Submission email skipped.");
-    }
-
-    // ✅ Respond immediately; heavy processing runs in background
+    // ✅ FIX: Respond to client BEFORE Drive upload — prevents Request aborted
     res.json({
       success: true,
       submissionId:     submissionRecord.submissionId,
-      folderLink,
+      folderLink:       existingFolderId
+        ? String(inputDriveFolderLink || `https://drive.google.com/drive/folders/${existingFolderId}`)
+        : "Uploading in background...",
       processingSource: source,
     });
 
-    // Background processing
-    if (folderId || hasUploadedFiles) {
-      processSubmission({
-        submission,
-        folderId,
-        files:           folderId ? undefined : uploadedFilesArr,
-        transporter,
-        driveFolderLink: folderLink,
-        submissionId:    submissionRecord.submissionId,
-      }).catch(err => {
-        console.error("[Background] Document processing failed:", err);
-      });
-    }
+    // ── Everything below runs after response is sent ──
+    setImmediate(async () => {
+      const { updateSubmissionRecord } = require("./services/submissionStore");
 
-    // Cleanup temp files if already uploaded to Drive
-    if (folderId) {
-      for (const file of uploadedFilesArr) {
-        fs.unlink(file.path).catch(() => {});
+      let folderId   = existingFolderId || null;
+      let folderLink = existingFolderId
+        ? String(inputDriveFolderLink || `https://drive.google.com/drive/folders/${existingFolderId}`)
+        : "Not uploaded to Google Drive";
+
+      // ── STEP 1: Drive upload ──────────────────────────────────
+      if (!folderId && runtime.enableDriveUpload && hasUploadedFiles) {
+        try {
+          const preparedFiles = await prepareUploadedFiles(uploadedFilesArr);
+          folderId = await createFolder(`${name}_${constitution}_${vendorType}_${Date.now()}`);
+
+          for (const file of preparedFiles) {
+            const ext = path.extname(file.originalname || "") || "";
+            await uploadFile({ ...file, originalname: `${file.fieldname}${ext}` }, folderId);
+          }
+
+          folderLink = await makePublic(folderId);
+          console.log(`[Drive] Upload complete: ${folderLink}`);
+
+          await updateSubmissionRecord(submissionRecord.submissionId, (record) => ({
+            ...record,
+            driveFolderId:   folderId,
+            driveFolderLink: folderLink,
+          })).catch(() => {});
+
+        } catch (driveErr) {
+          console.error("[Drive] Upload failed:", driveErr);
+          folderLink = "Google Drive upload failed";
+        }
+      } else if (!runtime.enableDriveUpload && hasUploadedFiles) {
+        console.log("[LOCAL TEST] Drive upload skipped.");
       }
-    }
+
+      // ── STEP 2: Email 1 — fires immediately after Drive upload ──
+      // Contains submission details + Drive folder link.
+      // Does NOT wait for OCR or report.
+      if (runtime.enableSubmissionEmail) {
+        try {
+          await transporter.sendMail({
+            from:    process.env.EMAIL_USER,
+            to:      process.env.EMAIL_USER,
+            cc:      process.env.CC_EMAILS,
+            subject: `New Vendor Submission — ${name || "Unknown"}`,
+            text: [
+              "📋 NEW VENDOR SUBMISSION",
+              "─────────────────────────────",
+              `Submission ID : ${submissionRecord.submissionId}`,
+              `Name          : ${name || "-"}`,
+              `Phone         : ${phone || "-"}`,
+              `Email         : ${email || "-"}`,
+              `Constitution  : ${constitution || "-"}`,
+              `Vendor Type   : ${vendorType || "-"}`,
+              `Product       : ${product || "-"}`,
+              `HSN           : ${hsn || "-"}`,
+              "",
+              "📍 Warehouse Location",
+              `Address       : ${submission.geoAddress || "-"}`,
+              `Coordinates   : ${submission.geoLatitude || "-"}, ${submission.geoLongitude || "-"}`,
+              `Captured At   : ${submission.geoCapturedAt || "-"}`,
+              `Maps Link     : ${submission.geoMapsUrl || "-"}`,
+              "",
+              "👤 Authorized Person",
+              `Address       : ${submission.authorizedPersonGeoAddress || "-"}`,
+              "",
+              "📁 Drive Folder",
+              folderLink,
+              "",
+              "─────────────────────────────",
+              "Analysis report will follow in a separate email once processing is complete.",
+            ].join("\n"),
+          });
+          console.log("[Email] Submission email (email 1) sent.");
+        } catch (emailErr) {
+          console.error("[Email] Submission email failed:", emailErr);
+        }
+      } else {
+        console.log("[LOCAL TEST] Submission email (email 1) skipped.");
+      }
+
+      // ── STEP 3: OCR + analysis + Email 2 (slow, runs in background) ──
+      // processSubmission internally sends the review email with report attached.
+      if (folderId || hasUploadedFiles) {
+        processSubmission({
+          submission,
+          folderId,
+          files:           folderId ? undefined : uploadedFilesArr,
+          transporter,
+          driveFolderLink: folderLink,
+          submissionId:    submissionRecord.submissionId,
+        }).catch(err => {
+          console.error("[Background] Document processing failed:", err);
+        });
+      }
+
+      // Cleanup temp files after Drive upload
+      if (folderId) {
+        for (const file of uploadedFilesArr) {
+          fs.unlink(file.path).catch(() => {});
+        }
+      }
+    });
 
   } catch (err) {
     console.error("[Submit] Unexpected error:", err);
