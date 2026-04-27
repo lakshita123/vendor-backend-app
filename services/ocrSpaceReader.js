@@ -1,6 +1,6 @@
 const fs = require("fs/promises");
 
-async function extractPdfTextWithOcrSpace(filePath) {
+async function extractPdfTextWithOcrSpace(filePath, { ocrEngine = "2" } = {}) {
   const apiKey = process.env.OCR_SPACE_API_KEY;
 
   if (!apiKey) {
@@ -9,30 +9,31 @@ async function extractPdfTextWithOcrSpace(filePath) {
 
   const sharp = require("sharp");
 
-	let fileBuffer = await fs.readFile(filePath);
-
-	// Compress ONLY if file is large (optional but recommended)
-	if (fileBuffer.length > 1024 * 1024) {
-	  try {
-		fileBuffer = await sharp(fileBuffer)
-		  .resize({ width: 1200 })
-		  .jpeg({ quality: 70 })
-		  .toBuffer();
-
-		console.log(`[OCR] Compressed file: ${fileName}`);
-	  } catch (err) {
-		console.warn(`[OCR] Compression failed, using original: ${err.message}`);
-	  }
-	}
-  const form = new FormData();
   const fileName = filePath.split(/[/\\]/).pop() || "document.pdf";
+
+  let fileBuffer = await fs.readFile(filePath);
+
+  // Compress ONLY if file is large — reduces 413 errors
+  if (fileBuffer.length > 1024 * 1024) {
+    try {
+      fileBuffer = await sharp(fileBuffer)
+        .resize({ width: 1200 })
+        .jpeg({ quality: 70 })
+        .toBuffer();
+      console.log(`[OCR] Compressed file: ${fileName} (${Math.round(fileBuffer.length / 1024)}KB)`);
+    } catch (err) {
+      console.warn(`[OCR] Compression failed, using original: ${err.message}`);
+    }
+  }
+
+  const form = new FormData();
 
   form.append("file", new Blob([fileBuffer]), fileName);
   form.append("language", "eng");
   form.append("isOverlayRequired", "false");
   form.append("detectOrientation", "true");
   form.append("scale", "true");
-  form.append("OCREngine", "2");
+  form.append("OCREngine", ocrEngine); // Engine 1 = better for coloured scans (Aadhaar); Engine 2 = better for printed docs
 
   const response = await fetch("https://api.ocr.space/parse/image", {
     method: "POST",
