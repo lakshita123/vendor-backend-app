@@ -1,4 +1,5 @@
 const fs = require("fs/promises");
+const { runWithOcrThrottle } = require("./ocrThrottle");
 
 async function extractPdfTextWithOcrSpace(filePath, { ocrEngine = "2" } = {}) {
   const apiKey = process.env.OCR_SPACE_API_KEY;
@@ -35,13 +36,15 @@ async function extractPdfTextWithOcrSpace(filePath, { ocrEngine = "2" } = {}) {
   form.append("scale", "true");
   form.append("OCREngine", ocrEngine); // Engine 1 = better for coloured scans (Aadhaar); Engine 2 = better for printed docs
 
-  const response = await fetch("https://api.ocr.space/parse/image", {
-    method: "POST",
-    headers: {
-      apikey: apiKey,
-    },
-    body: form,
-  });
+  const response = await runWithOcrThrottle(() =>
+    fetch("https://api.ocr.space/parse/image", {
+      method: "POST",
+      headers: {
+        apikey: apiKey,
+      },
+      body: form,
+    })
+  );
 
   if (!response.ok) {
     throw new Error(`OCR.space request failed with status ${response.status}`);

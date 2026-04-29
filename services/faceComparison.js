@@ -9,6 +9,7 @@
  * compareFaces() API unchanged.
  */
 
+const fs = require("fs");
 const path = require("path");
 const sharp = require("sharp");
 const canvas = require("canvas");
@@ -21,7 +22,24 @@ const faceapi = require("face-api.js");
 faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
 
 // ── Model loading ──────────────────────────────────────────────
-const MODELS_DIR = path.join(__dirname, "../../face-models");
+function resolveModelsDir() {
+  const candidates = [
+    process.env.FACE_MODELS_DIR,
+    path.join(__dirname, "../face-models"),
+    path.join(__dirname, "../../face-models"),
+  ].filter(Boolean);
+
+  for (const dir of candidates) {
+    const manifestPath = path.join(dir, "ssd_mobilenetv1_model-weights_manifest.json");
+    if (fs.existsSync(manifestPath)) {
+      return dir;
+    }
+  }
+
+  return candidates[0] || path.join(__dirname, "../face-models");
+}
+
+const MODELS_DIR = resolveModelsDir();
 let modelsLoaded = false;
 
 async function loadModels() {

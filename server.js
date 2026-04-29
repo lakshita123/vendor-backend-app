@@ -101,17 +101,49 @@ function logStartupWarnings() {
   });
 }
 
-const transporter = runtime.isLocalTestMode
-  ? {
+function parsePort(value, fallback) {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseOptionalBoolean(value) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
+
+function createMailTransporter() {
+  if (runtime.isLocalTestMode) {
+    return {
       async sendMail(payload) {
         console.log(`[LOCAL TEST] Email skipped: ${payload.subject}`);
         return { accepted: [payload.to] };
       },
-    }
-  : nodemailer.createTransport({
-      service: "gmail",
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-    });
+    };
+  }
+
+  const host = process.env.SMTP_HOST || "smtp.gmail.com";
+  const port = parsePort(process.env.SMTP_PORT, 587);
+  const secure = parseOptionalBoolean(process.env.SMTP_SECURE) ?? (port === 465);
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    family: 4,
+    requireTLS: !secure,
+    connectionTimeout: 20000,
+    greetingTimeout: 20000,
+    socketTimeout: 30000,
+  });
+}
+
+const transporter = runtime.isLocalTestMode
+  ? createMailTransporter()
+  : createMailTransporter();
 
 /* ══════════════════════════════════════════════════════════════
    POST /submit

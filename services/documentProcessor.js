@@ -124,7 +124,10 @@ async function processSubmission({
     preparedFiles = sourceFiles;
   }
 
-  const reviewedDocuments = await Promise.all(preparedFiles.map((file) => readDocument(file)));
+  const reviewedDocuments = [];
+  for (const file of preparedFiles) {
+    reviewedDocuments.push(await readDocument(file));
+  }
 
   const faceResults = await runFaceComparisons(preparedFiles).catch((err) => {
     console.warn("[Processing] Face comparison error:", err.message);
@@ -163,35 +166,43 @@ async function processSubmission({
   });
 
   const reviewRecipient = process.env.REVIEW_EMAIL || process.env.EMAIL_USER;
+  let reviewEmailSent = false;
+  let completionReason = runtime.enableReviewEmail ? "Review email sent" : "Review email skipped";
 
   if (runtime.enableReviewEmail) {
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: reviewRecipient,
-      cc: process.env.CC_EMAILS,
-      subject: `Vendor Submission Issues - ${submission.name || "Unknown Vendor"}`,
-      text: [
-        "The vendor submission review engine detected issues.",
-        "",
-        `Vendor: ${submission.name || "-"}`,
-        `Email: ${submission.email || "-"}`,
-        `Phone: ${submission.phone || "-"}`,
-        `Constitution: ${submission.constitution || "-"}`,
-        `Vendor Type: ${submission.vendorType || "-"}`,
-        `Product: ${submission.product || "-"}`,
-        `Geo Address: ${submission.geoAddress || "-"}`,
-        `Geo Coordinates: ${submission.geoLatitude || "-"}, ${submission.geoLongitude || "-"}`,
-        `Geo Captured At: ${submission.geoCapturedAt || "-"}`,
-        `Google Maps Link: ${submission.geoMapsUrl || "-"}`,
-        "",
-        `Drive Folder: ${driveFolderLink || "Not available"}`,
-        `Detected Issues: ${validation.issues.length}`,
-        "",
-        "See the attached PDF report for details.",
-      ].join("\n"),
-      attachments: [{ filename: path.basename(reportPath), path: reportPath }],
-    });
-    console.log(`[Processing] Review email sent. Report: ${reportPath}`);
+    try {
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: reviewRecipient,
+        cc: process.env.CC_EMAILS,
+        subject: `Vendor Submission Issues - ${submission.name || "Unknown Vendor"}`,
+        text: [
+          "The vendor submission review engine detected issues.",
+          "",
+          `Vendor: ${submission.name || "-"}`,
+          `Email: ${submission.email || "-"}`,
+          `Phone: ${submission.phone || "-"}`,
+          `Constitution: ${submission.constitution || "-"}`,
+          `Vendor Type: ${submission.vendorType || "-"}`,
+          `Product: ${submission.product || "-"}`,
+          `Geo Address: ${submission.geoAddress || "-"}`,
+          `Geo Coordinates: ${submission.geoLatitude || "-"}, ${submission.geoLongitude || "-"}`,
+          `Geo Captured At: ${submission.geoCapturedAt || "-"}`,
+          `Google Maps Link: ${submission.geoMapsUrl || "-"}`,
+          "",
+          `Drive Folder: ${driveFolderLink || "Not available"}`,
+          `Detected Issues: ${validation.issues.length}`,
+          "",
+          "See the attached PDF report for details.",
+        ].join("\n"),
+        attachments: [{ filename: path.basename(reportPath), path: reportPath }],
+      });
+      reviewEmailSent = true;
+      console.log(`[Processing] Review email sent. Report: ${reportPath}`);
+    } catch (error) {
+      completionReason = `Review email failed: ${error.message}`;
+      console.error("[Processing] Review email failed:", error);
+    }
   } else {
     console.log(`[LOCAL TEST] Review email skipped. Report: ${reportPath}`);
   }
@@ -202,15 +213,15 @@ async function processSubmission({
     processing: {
       ...record.processing,
       completedAt: new Date().toISOString(),
-      reviewEmailSent: Boolean(runtime.enableReviewEmail),
+      reviewEmailSent,
       reportPath,
-      reason: runtime.enableReviewEmail ? "Review email sent" : "Review email skipped",
+      reason: completionReason,
       issuesCount: validation.issues.length,
       validationStatus: validation.status,
     },
   }));
 
-  return { sent: runtime.enableReviewEmail, reportPath, validation };
+  return { sent: reviewEmailSent, reportPath, validation };
 }
 
 module.exports = { processSubmission };

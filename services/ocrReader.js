@@ -1,6 +1,7 @@
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
+const { runWithOcrThrottle } = require("./ocrThrottle");
 
 async function readTextFromImage(filePath) {
   try {
@@ -26,15 +27,17 @@ async function readTextFromImage(filePath) {
     params.append("scale", "true");
     params.append("OCREngine", "2"); // Engine 2 handles printed/scanned Indian docs better
 
-    const response = await axios.post(
-      "https://api.ocr.space/parse/image",
-      params,
-      {
-        headers: {
-          apikey: process.env.OCR_SPACE_API_KEY || "helloworld",
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      }
+    const response = await runWithOcrThrottle(() =>
+      axios.post(
+        "https://api.ocr.space/parse/image",
+        params,
+        {
+          headers: {
+            apikey: process.env.OCR_SPACE_API_KEY || "helloworld",
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+        }
+      )
     );
 
     const text = response.data?.ParsedResults?.[0]?.ParsedText || "";
