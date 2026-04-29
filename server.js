@@ -1,4 +1,5 @@
 require("dotenv").config();
+const dns = require("dns");
 
 const express = require("express");
 const multer  = require("multer");
@@ -124,31 +125,39 @@ function createMailTransporter() {
     };
   }
 
-  // ✅ Use secure SMTP (port 465)
-  const host = process.env.SMTP_HOST || "smtp.gmail.com";
-  const port = 465;
-  const secure = true;
+  console.log(`[Mail] Using secure SMTP -> smtp.gmail.com:465`);
 
-  console.log(`[Mail] Using secure SMTP -> ${host}:${port}`);
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
 
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure, // 🔥 important (SSL, not STARTTLS)
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
 
-    // Optional but helpful
-    tls: {
-      rejectUnauthorized: false,
+    // 🔥 FORCE IPv4 (MAIN FIX)
+    family: 4,
+    lookup: (hostname, options, callback) => {
+      return dns.lookup(hostname, { family: 4 }, callback);
     },
 
     connectionTimeout: 20000,
     greetingTimeout: 20000,
     socketTimeout: 30000,
   });
+
+  // ✅ OPTIONAL but VERY useful
+  transporter.verify((err, success) => {
+    if (err) {
+      console.error("SMTP ERROR:", err);
+    } else {
+      console.log("SMTP READY");
+    }
+  });
+
+  return transporter;
 }
 /*
 function createMailTransporter() {
