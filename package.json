@@ -29,6 +29,7 @@
     "pdf-parse": "^2.4.5",
     "pdf2pic": "^3.2.0",
     "pdfkit": "^0.18.0",
+    "resend": "^6.12.2",
     "sharp": "^0.34.5",
     "tesseract.js": "^7.0.0"
   }
