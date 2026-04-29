@@ -101,6 +101,21 @@ function logStartupWarnings() {
   });
 }
 
+// Create a fresh transporter each time — avoids stale IPv6 connections on Render.
+// Uses nodemailer's built-in Gmail service shorthand which picks the best
+// available connection method. family:4 forces IPv4 DNS to bypass Render's
+// broken IPv6→Gmail routing.
+function buildTransporter() {
+  return nodemailer.createTransport({
+    service: "gmail",
+    family: 4,
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+}
+
 const transporter = runtime.isLocalTestMode
   ? {
       async sendMail(payload) {
@@ -108,15 +123,16 @@ const transporter = runtime.isLocalTestMode
         return { accepted: [payload.to] };
       },
     }
-  : nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-      requireTLS: true,
-      family: 4,            // ← Force IPv4 — Render blocks IPv6 SMTP connections
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-      tls: { rejectUnauthorized: false },
-    });
+  : {
+      async sendMail(payload) {
+        const t = buildTransporter();
+        try {
+          return await t.sendMail(payload);
+        } finally {
+          t.close();
+        }
+      },
+    };
 
 /* ══════════════════════════════════════════════════════════════
    POST /submit
