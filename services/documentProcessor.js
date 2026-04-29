@@ -11,9 +11,18 @@ const { updateSubmissionRecord } = require("./submissionStore");
 
 
 async function runFaceComparisons(files) {
-  const geoTagFile = files.find(
-    (f) => f.fieldname === "authorized_person_with_warehouse_photo"
+  // Support both old fieldname and new split fieldnames
+  const authorizedPersonFile = files.find(
+    (f) => f.fieldname === "authorized_person_with_warehouse_photo" ||
+           f.fieldname === "authorized_person_photo"
   );
+
+  const warehouseFile = files.find(
+    (f) => f.fieldname === "warehouse_photo"
+  );
+
+  // Use authorized person photo for face ID, fallback to warehouse photo
+  const geoTagFile = authorizedPersonFile || warehouseFile;
   if (!geoTagFile) return null;
 
   const identityFiles = [];

@@ -19,6 +19,7 @@ const { prepareUploadedFiles } = require("./services/filePreparation");
 const {
   createSubmissionRecord,
   readSubmissionRecord,
+  lookupByPhone,
 } = require("./services/submissionStore");
 
 const app = express();
@@ -347,6 +348,49 @@ app.get("/submissions/:submissionId", async (req, res) => {
     });
   } catch (_) {
     res.status(404).json({ success: false, error: "Submission not found" });
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   GET /lookup-phone/:phone
+   Returns the most-recent submission for a given mobile number.
+   Used by the frontend to pre-fill the form on return visits.
+══════════════════════════════════════════════════════════════ */
+app.get("/lookup-phone/:phone", async (req, res) => {
+  try {
+    const phone = String(req.params.phone || "").trim();
+    if (!/^\d{10}$/.test(phone)) {
+      return res.status(400).json({ success: false, error: "Invalid phone number" });
+    }
+
+    const entries = await lookupByPhone(phone);
+
+    if (!entries.length) {
+      return res.json({ success: true, found: false });
+    }
+
+    // Return the most-recent entry (index 0 — newest first)
+    const latest = entries[0];
+
+    return res.json({
+      success:  true,
+      found:    true,
+      previous: {
+        submissionId:    latest.submissionId,
+        createdAt:       latest.createdAt,
+        driveFolderId:   latest.driveFolderId   || null,
+        driveFolderLink: latest.driveFolderLink || null,
+        name:            latest.name,
+        email:           latest.email,
+        constitution:    latest.constitution,
+        vendorType:      latest.vendorType,
+        product:         latest.product,
+        hsn:             latest.hsn,
+      },
+    });
+  } catch (err) {
+    console.error("[LookupPhone] Error:", err);
+    res.status(500).json({ success: false, error: "Internal error" });
   }
 });
 
