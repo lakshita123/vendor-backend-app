@@ -124,6 +124,43 @@ function createMailTransporter() {
     };
   }
 
+  // ✅ Use secure SMTP (port 465)
+  const host = process.env.SMTP_HOST || "smtp.gmail.com";
+  const port = 465;
+  const secure = true;
+
+  console.log(`[Mail] Using secure SMTP -> ${host}:${port}`);
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure, // 🔥 important (SSL, not STARTTLS)
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+
+    // Optional but helpful
+    tls: {
+      rejectUnauthorized: false,
+    },
+
+    connectionTimeout: 20000,
+    greetingTimeout: 20000,
+    socketTimeout: 30000,
+  });
+}
+/*
+function createMailTransporter() {
+  if (runtime.isLocalTestMode) {
+    return {
+      async sendMail(payload) {
+        console.log(`[LOCAL TEST] Email skipped: ${payload.subject}`);
+        return { accepted: [payload.to] };
+      },
+    };
+  }
+
   const host = process.env.SMTP_HOST || "smtp.gmail.com";
   const port = parsePort(process.env.SMTP_PORT, 587);
   const secure = parseOptionalBoolean(process.env.SMTP_SECURE) ?? (port === 465);
@@ -143,7 +180,7 @@ function createMailTransporter() {
     socketTimeout: 30000,
   });
 }
-
+*/
 const transporter = createMailTransporter();
 
 
