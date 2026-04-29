@@ -62,6 +62,9 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 const uploadFields = upload.any();
 
+
+console.log("RESEND KEY:", process.env.RESEND_API_KEY);
+
 function hasValue(value) {
   return Boolean(String(value || "").trim());
 }
