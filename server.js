@@ -113,6 +113,7 @@ const transporter = runtime.isLocalTestMode
       port: 587,
       secure: false,
       requireTLS: true,
+      family: 4,            // ← Force IPv4 — Render blocks IPv6 SMTP connections
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
       tls: { rejectUnauthorized: false },
     });
