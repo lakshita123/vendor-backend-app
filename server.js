@@ -127,6 +127,9 @@ function createMailTransporter() {
   const host = process.env.SMTP_HOST || "smtp.gmail.com";
   const port = parsePort(process.env.SMTP_PORT, 587);
   const secure = parseOptionalBoolean(process.env.SMTP_SECURE) ?? (port === 465);
+  
+  console.log(`[Mail] Transport config -> host=${host}, port=${port}, secure=${secure}, family=4`);
+
 
   return nodemailer.createTransport({
     host,
@@ -141,9 +144,8 @@ function createMailTransporter() {
   });
 }
 
-const transporter = runtime.isLocalTestMode
-  ? createMailTransporter()
-  : createMailTransporter();
+const transporter = createMailTransporter();
+
 
 /* ══════════════════════════════════════════════════════════════
    POST /submit
