@@ -26,40 +26,44 @@ async function extractPdfTextWithOcrSpace(filePath, { ocrEngine = "2" } = {}) {
     }
   }
 
-  async function buildForm() {
-    const f = new FormData();
-    f.append("file", new Blob([fileBuffer]), fileName);
-    f.append("language", "eng");
-    f.append("isOverlayRequired", "false");
-    f.append("detectOrientation", "true");
-    f.append("scale", "true");
-    f.append("OCREngine", ocrEngine);
-    return f;
-  }
+  const form = new FormData();
 
-  async function doFetch() {
-    return fetch("https://api.ocr.space/parse/image", {
-      method: "POST",
-      headers: { apikey: apiKey },
-      body: await buildForm(),
-    });
-  }
+  form.append("file", new Blob([fileBuffer]), fileName);
+  form.append("language", "eng");
+  form.append("isOverlayRequired", "false");
+  form.append("detectOrientation", "true");
+  form.append("scale", "true");
+  form.append("OCREngine", ocrEngine); // Engine 1 = better for coloured scans (Aadhaar); Engine 2 = better for printed docs
 
-  let response = await doFetch();
+  const response = await fetch("https://api.ocr.space/parse/image", {
+    method: "POST",
+    headers: {
+      apikey: apiKey,
+    },
+    body: form,
+  });
 
   // Retry up to 3 times on 429 rate-limit with exponential backoff
-  if (!response.ok && response.status === 429) {
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const delay = attempt * 3000; // 3s, 6s, 9s
-      console.warn(`[OCR.space] 429 rate limit — retrying in ${delay / 1000}s (attempt ${attempt}/3)`);
-      await new Promise(r => setTimeout(r, delay));
-      response = await doFetch();
-      if (response.ok) break;
-      if (response.status !== 429) break; // Non-429 error — stop retrying
-    }
-  }
-
   if (!response.ok) {
+    if (response.status === 429) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const delay = attempt * 3000; // 3s, 6s, 9s
+        console.warn(`[OCR.space] 429 rate limit — retrying in ${delay / 1000}s (attempt ${attempt}/3)`);
+        await new Promise(r => setTimeout(r, delay));
+        const retry = await fetch("https://api.ocr.space/parse/image", {
+          method: "POST",
+          headers: { apikey: apiKey },
+          body: form,
+        });
+        if (retry.ok) {
+          const retryPayload = await retry.json();
+          if (!retryPayload.IsErroredOnProcessing) {
+            return (retryPayload.ParsedResults || []).map(r => r.ParsedText || "").join("\n").trim();
+          }
+        }
+        if (retry.status !== 429) break; // Non-429 error — stop retrying
+      }
+    }
     throw new Error(`OCR.space request failed with status ${response.status}`);
   }
 

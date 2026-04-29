@@ -170,37 +170,33 @@ async function processSubmission({
   const reviewRecipient = process.env.REVIEW_EMAIL || process.env.EMAIL_USER;
 
   if (runtime.enableReviewEmail) {
-    try {
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: reviewRecipient,
-        cc: process.env.CC_EMAILS,
-        subject: `Vendor Submission Issues - ${submission.name || "Unknown Vendor"}`,
-        text: [
-          "The vendor submission review engine detected issues.",
-          "",
-          `Vendor: ${submission.name || "-"}`,
-          `Email: ${submission.email || "-"}`,
-          `Phone: ${submission.phone || "-"}`,
-          `Constitution: ${submission.constitution || "-"}`,
-          `Vendor Type: ${submission.vendorType || "-"}`,
-          `Product: ${submission.product || "-"}`,
-          `Geo Address: ${submission.geoAddress || "-"}`,
-          `Geo Coordinates: ${submission.geoLatitude || "-"}, ${submission.geoLongitude || "-"}`,
-          `Geo Captured At: ${submission.geoCapturedAt || "-"}`,
-          `Google Maps Link: ${submission.geoMapsUrl || "-"}`,
-          "",
-          `Drive Folder: ${driveFolderLink || "Not available"}`,
-          `Detected Issues: ${validation.issues.length}`,
-          "",
-          "See the attached PDF report for details.",
-        ].join("\n"),
-        attachments: [{ filename: path.basename(reportPath), path: reportPath }],
-      });
-      console.log(`[Processing] Review email sent. Report: ${reportPath}`);
-    } catch (emailErr) {
-      console.error("[Processing] Review email failed:", emailErr.message);
-    }
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: reviewRecipient,
+      cc: process.env.CC_EMAILS,
+      subject: `Vendor Submission Issues - ${submission.name || "Unknown Vendor"}`,
+      text: [
+        "The vendor submission review engine detected issues.",
+        "",
+        `Vendor: ${submission.name || "-"}`,
+        `Email: ${submission.email || "-"}`,
+        `Phone: ${submission.phone || "-"}`,
+        `Constitution: ${submission.constitution || "-"}`,
+        `Vendor Type: ${submission.vendorType || "-"}`,
+        `Product: ${submission.product || "-"}`,
+        `Geo Address: ${submission.geoAddress || "-"}`,
+        `Geo Coordinates: ${submission.geoLatitude || "-"}, ${submission.geoLongitude || "-"}`,
+        `Geo Captured At: ${submission.geoCapturedAt || "-"}`,
+        `Google Maps Link: ${submission.geoMapsUrl || "-"}`,
+        "",
+        `Drive Folder: ${driveFolderLink || "Not available"}`,
+        `Detected Issues: ${validation.issues.length}`,
+        "",
+        "See the attached PDF report for details.",
+      ].join("\n"),
+      attachments: [{ filename: path.basename(reportPath), path: reportPath }],
+    });
+    console.log(`[Processing] Review email sent. Report: ${reportPath}`);
   } else {
     console.log(`[LOCAL TEST] Review email skipped. Report: ${reportPath}`);
   }
