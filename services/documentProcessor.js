@@ -124,7 +124,12 @@ async function processSubmission({
     preparedFiles = sourceFiles;
   }
 
-  const reviewedDocuments = await Promise.all(preparedFiles.map((file) => readDocument(file)));
+  // Process documents sequentially — parallel OCR hits the rate limit (429)
+  const reviewedDocuments = [];
+  for (const file of preparedFiles) {
+    const result = await readDocument(file);
+    reviewedDocuments.push(result);
+  }
 
   const faceResults = await runFaceComparisons(preparedFiles).catch((err) => {
     console.warn("[Processing] Face comparison error:", err.message);

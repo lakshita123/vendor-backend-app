@@ -2,7 +2,7 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 
-async function readTextFromImage(filePath) {
+/*async function readTextFromImage(filePath) {
   try {
     const base64 = fs.readFileSync(filePath, { encoding: "base64" });
 
@@ -42,6 +42,40 @@ async function readTextFromImage(filePath) {
   } catch (err) {
     console.error("OCR Error:", err.message);
     return "";
+  }
+}
+
+*/
+
+// NOTE: Ensure your existing OCR execution logic (Tesseract or Cloud) is called inside this function where indicated.
+async function readTextFromImage(imagePath) {
+  const ext = path.extname(imagePath);
+  const optimizedPath = imagePath.replace(ext, `_optimized.jpg`);
+
+  try {
+    const image = sharp(imagePath);
+    const metadata = await image.metadata();
+
+    // 1. CONDITIONAL RESIZE: Only shrink if it's a massive, high-res photo (> 1500px).
+    if (metadata.width > 1500) {
+      image.resize({ width: 1500, withoutEnlargement: true });
+    }
+
+    // 2. ENHANCE FOR OCR: Clean up the image so the OCR doesn't hang.
+    await image
+      .grayscale()       // Remove color noise 
+      .normalize()       // Maximize contrast 
+      .sharpen()         // Crisp up blurry edges
+      .jpeg({ quality: 85 }) 
+      .toFile(optimizedPath);
+
+    // 3. RUN OCR: Replace this comment with your actual OCR call
+    // Example: const text = await runTesseract(optimizedPath);
+    // return text;
+
+  } finally {
+    // 4. CLEANUP: Delete the temp optimized file
+    await fs.unlink(optimizedPath).catch(() => {});
   }
 }
 

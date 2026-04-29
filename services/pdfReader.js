@@ -147,8 +147,8 @@ async function extractCloudText(filePath, fieldname) {
   const key = fieldname || "";
   if (runtime.cloudOcrProvider === "google")   return extractPdfTextWithGoogleVision(filePath);
   if (runtime.cloudOcrProvider === "ocrspace") {
-    // Throttle: OCR.space free/basic plan = ~1 req/sec
-    await new Promise(r => setTimeout(r, 1200));
+    // Throttle: OCR.space free/basic plan — wait 2s between calls (sequential mode)
+    await new Promise(r => setTimeout(r, 2000));
     // Aadhaar has coloured background — Engine 1 handles it better than Engine 2
     const ocrEngine = key.includes("aadhar") ? "1" : "2";
     return extractPdfTextWithOcrSpace(filePath, { ocrEngine });
@@ -215,6 +215,7 @@ async function extractPdfImagesAndOcr(filePath, fieldname) {
   }
 }
 
+/*
 async function readDocument(file) {
   const extension = path.extname(file.originalname || file.filename || "").toLowerCase();
   const isPdf     = extension === ".pdf" || file.mimetype === "application/pdf";
@@ -305,5 +306,89 @@ async function readDocument(file) {
     };
   }
 }
+
+*/
+
+async function readDocument(file) {
+  const extension = path.extname(file.originalname || file.filename || "").toLowerCase();
+  const isPdf     = extension === ".pdf" || file.mimetype === "application/pdf";
+  const isImage   = file.mimetype && file.mimetype.startsWith("image/");
+
+  // Allow both PDFs and Images to be processed
+  if (!isPdf && !isImage) {
+    return {
+      ...file,
+      extractionStatus: "skipped",
+      extractedText:    "",
+      totalPages:       0,
+      extractionError:  "Only PDF and Image extraction is supported right now.",
+    };
+  }
+
+  try {
+    let bestText = "";
+    let bestRawText = "";
+    let bestScore = 0;
+    let totalPages = 1;
+
+    if (isPdf) {
+      // PDF Processing Logic
+      let extracted = await extractPdfText(file.path);
+      totalPages = extracted.totalPages > 10 ? 1 : extracted.totalPages;
+      bestRawText = extracted.text;
+      bestText = sanitizeExtractedText(bestRawText);
+      bestScore = extractionQualityScore(file, bestText);
+
+      // Render PDF pages -> OCR
+      const ocrTextRaw = await extractPdfImagesAndOcr(file.path, file.fieldname);
+      const ocrText = sanitizeExtractedText(ocrTextRaw);
+      const ocrScore = extractionQualityScore(file, ocrText);
+
+      if (ocrScore > bestScore || (ocrScore === bestScore && ocrText.length > bestText.length)) {
+        bestText = ocrText;
+        bestRawText = ocrTextRaw;
+        bestScore = ocrScore;
+      }
+    } else if (isImage) {
+      // Image Processing Logic
+      bestRawText = await readTextFromImage(file.path);
+      bestText = sanitizeExtractedText(bestRawText);
+      bestScore = extractionQualityScore(file, bestText);
+    }
+
+    // Cloud OCR as final fallback
+    if (shouldTryCloudOcr(file, bestText)) {
+      try {
+        const cloudText  = sanitizeExtractedText(await extractCloudText(file.path, file.fieldname));
+        const cloudScore = extractionQualityScore(file, cloudText);
+        if (cloudScore > bestScore || (cloudScore === bestScore && cloudText.length > bestText.length)) {
+          bestText    = cloudText;
+          bestRawText = cloudText;
+          bestScore   = cloudScore;
+        }
+      } catch (error) {
+        console.warn(`[pdfReader] Cloud OCR failed for ${file.originalname}: ${error.message}`);
+      }
+    }
+
+    return {
+      ...file,
+      extractionStatus: bestText ? "success" : "empty",
+      extractedText:    bestText,
+      rawExtractedText: bestRawText,
+      totalPages,
+      extractionError:  bestText ? null : "No readable text found.",
+    };
+  } catch (error) {
+    return {
+      ...file,
+      extractionStatus: "failed",
+      extractedText:    "",
+      totalPages:       0,
+      extractionError:  error.message,
+    };
+  }
+}
+
 
 module.exports = { extractPdfText, readDocument };

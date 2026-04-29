@@ -21,11 +21,29 @@ const faceapi = require("face-api.js");
 faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
 
 // ── Model loading ──────────────────────────────────────────────
-const MODELS_DIR = path.join(__dirname, "../../face-models");
+// Set FACE_MODELS_DIR env var to override.
+// Local:  set FACE_MODELS_DIR=/path/to/other-repo/face-models
+// Render: set FACE_MODELS_DIR=./face-models  (after copying files into this repo)
+const MODELS_DIR = process.env.FACE_MODELS_DIR || path.join(__dirname, "../../face-models");
 let modelsLoaded = false;
+let modelsUnavailable = false; // set true if models dir missing — skips all face ops
 
 async function loadModels() {
   if (modelsLoaded) return;
+  if (modelsUnavailable) throw new Error("Face models not available on this server.");
+
+  // Check if models directory exists before trying to load
+  try {
+    await require("fs/promises").access(MODELS_DIR);
+  } catch (_) {
+    modelsUnavailable = true;
+    console.warn(
+      `[FaceAPI] Models directory not found at ${MODELS_DIR}. ` +
+      "Face comparison will be skipped. " +
+      "To enable, add face-model files to the repo or set up a persistent disk on Render."
+    );
+    throw new Error("Face models directory not found — face comparison disabled.");
+  }
 
   await faceapi.nets.ssdMobilenetv1.loadFromDisk(MODELS_DIR);
   await faceapi.nets.faceRecognitionNet.loadFromDisk(MODELS_DIR);

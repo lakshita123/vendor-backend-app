@@ -341,10 +341,25 @@ function extractPersonName(text) {
 
   return null;
 }
+/*
+function extractAddressBlock(text) {
+  const cleaned = normalizeText(text);
+  return (
+    extractGroup(/Address[:\s]+(.+?)(?=help@|www\.|uidai|$)/i, cleaned) ||
+    extractGroup(
+      /Address of Principal Place of Business[:\s]+(.+?)(?=\d+\.\s|Date of Liability|Period of Validity|Type of Registration|$)/i,
+      cleaned
+    )
+  );
+}
+*/
 
 function extractAddressBlock(text) {
   const cleaned = normalizeText(text);
   return (
+    // FIX: Look for "Address" or "पता", capture everything until the 6-digit Pincode
+    extractGroup(/(?:Address|पता)[\s:/]+(.+?\b\d{6}\b)/i, cleaned) ||
+    // Fallback
     extractGroup(/Address[:\s]+(.+?)(?=help@|www\.|uidai|$)/i, cleaned) ||
     extractGroup(
       /Address of Principal Place of Business[:\s]+(.+?)(?=\d+\.\s|Date of Liability|Period of Validity|Type of Registration|$)/i,
@@ -627,6 +642,9 @@ function extractAadhaarData(text) {
   };
 }
 
+
+
+/*
 function extractPanData(text) {
   const cleaned = normalizeText(text);
   const panHolderCandidate =
@@ -642,6 +660,29 @@ function extractPanData(text) {
       /Permanent Account Number Card\s+[A-Z0-9]{10}\s+(.+?)(?=\s+For\b|\s+Father'?s Name|\s+\d{2}[\/-]\d{2}[\/-]\d{4}|$)/i,
       cleaned
     ) ||
+    extractPersonName(text);
+
+  return {
+    name: firstMeaningfulNameTokens(panHolderCandidate, 3),
+    panNumber: extractPan(text),
+  };
+}
+
+*/
+
+function extractPanData(text) {
+  const cleaned = normalizeText(text);
+  const panHolderCandidate =
+    extractGroup(
+      /Permanent Account Number Card\s+[A-Z0-9]{10}\s+GOVT\.?\s+OF\s+INDIA\s+(.+?)(?=\s+For\b|\s+Father'?s Name|\s+\d{2}[\/-]\d{2}[\/-]\d{4}|$)/i,
+      cleaned
+    ) ||
+    extractGroup(
+      /GOVT\.?\s+OF\s+INDIA\s+(.+?)(?=\s+For\b|\s+Father'?s Name|\s+\d{2}[\/-]\d{2}[\/-]\d{4}|$)/i,
+      cleaned
+    ) ||
+    // FIX: Fallback for cropped PANs — look for the text right before "Father's Name"
+    extractGroup(/([A-Z\s]+)(?=\s+(?:Father|FATHER))/i, cleaned) ||
     extractPersonName(text);
 
   return {
