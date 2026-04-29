@@ -1,9 +1,12 @@
 require("dotenv").config();
-const dns = require("dns");
+//const dns = require("dns");
+const { Resend } = require("resend");
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const express = require("express");
 const multer  = require("multer");
-const nodemailer = require("nodemailer");
+//const nodemailer = require("nodemailer");
 const cors    = require("cors");
 const path    = require("path");
 const fs      = require("fs/promises");
@@ -115,6 +118,8 @@ function parseOptionalBoolean(value) {
   return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
 }
 
+/*
+
 function createMailTransporter() {
   if (runtime.isLocalTestMode) {
     return {
@@ -159,6 +164,7 @@ function createMailTransporter() {
 
   return transporter;
 }
+*/
 /*
 function createMailTransporter() {
   if (runtime.isLocalTestMode) {
@@ -190,7 +196,7 @@ function createMailTransporter() {
   });
 }
 */
-const transporter = createMailTransporter();
+//const transporter = createMailTransporter();
 
 
 /* ══════════════════════════════════════════════════════════════
@@ -337,39 +343,34 @@ app.post("/submit", uploadFields, async (req, res) => {
       // Does NOT wait for OCR or report.
       if (runtime.enableSubmissionEmail) {
         try {
-          await transporter.sendMail({
-            from:    process.env.EMAIL_USER,
-            to:      process.env.EMAIL_USER,
-            cc:      process.env.CC_EMAILS,
-            subject: `New Vendor Submission — ${name || "Unknown"}`,
-            text: [
-              "📋 NEW VENDOR SUBMISSION",
-              "─────────────────────────────",
-              `Submission ID : ${submissionRecord.submissionId}`,
-              `Name          : ${name || "-"}`,
-              `Phone         : ${phone || "-"}`,
-              `Email         : ${email || "-"}`,
-              `Constitution  : ${constitution || "-"}`,
-              `Vendor Type   : ${vendorType || "-"}`,
-              `Product       : ${product || "-"}`,
-              `HSN           : ${hsn || "-"}`,
-              "",
-              "📍 Warehouse Location",
-              `Address       : ${submission.geoAddress || "-"}`,
-              `Coordinates   : ${submission.geoLatitude || "-"}, ${submission.geoLongitude || "-"}`,
-              `Captured At   : ${submission.geoCapturedAt || "-"}`,
-              `Maps Link     : ${submission.geoMapsUrl || "-"}`,
-              "",
-              "👤 Authorized Person",
-              `Address       : ${submission.authorizedPersonGeoAddress || "-"}`,
-              "",
-              "📁 Drive Folder",
-              folderLink,
-              "",
-              "─────────────────────────────",
-              "Analysis report will follow in a separate email once processing is complete.",
-            ].join("\n"),
-          });
+				 await resend.emails.send({
+		  from: "onboarding@resend.dev",
+		  to: process.env.EMAIL_USER,
+		  cc: process.env.CC_EMAILS,
+
+		  subject: `New Vendor Submission — ${name || "Unknown"}`,
+
+		  html: `
+			<h2>📋 New Vendor Submission</h2>
+
+			<p><b>Submission ID:</b> ${submissionRecord.submissionId}</p>
+			<p><b>Name:</b> ${name || "-"}</p>
+			<p><b>Phone:</b> ${phone || "-"}</p>
+			<p><b>Email:</b> ${email || "-"}</p>
+			<p><b>Constitution:</b> ${constitution || "-"}</p>
+			<p><b>Vendor Type:</b> ${vendorType || "-"}</p>
+			<p><b>Product:</b> ${product || "-"}</p>
+			<p><b>HSN:</b> ${hsn || "-"}</p>
+
+			<hr/>
+
+			<h3>📁 Drive Folder</h3>
+			<a href="${folderLink}" target="_blank">${folderLink}</a>
+
+			<br/><br/>
+			<p>Analysis report will follow shortly.</p>
+		  `,
+		});
           console.log("[Email] Submission email (email 1) sent.");
         } catch (emailErr) {
           console.error("[Email] Submission email failed:", emailErr);
@@ -382,13 +383,13 @@ app.post("/submit", uploadFields, async (req, res) => {
       // processSubmission internally sends the review email with report attached.
       if (folderId || hasUploadedFiles) {
         processSubmission({
-          submission,
-          folderId,
-          files:           folderId ? undefined : uploadedFilesArr,
-          transporter,
-          driveFolderLink: folderLink,
-          submissionId:    submissionRecord.submissionId,
-        }).catch(err => {
+		  submission,
+		  folderId,
+		  files: folderId ? undefined : uploadedFilesArr,
+		  transporter: null, // ✅ important
+		  driveFolderLink: folderLink,
+		  submissionId: submissionRecord.submissionId,
+		}).catch(err => {
           console.error("[Background] Document processing failed:", err);
         });
       }
