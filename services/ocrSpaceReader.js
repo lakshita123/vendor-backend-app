@@ -43,27 +43,7 @@ async function extractPdfTextWithOcrSpace(filePath, { ocrEngine = "2" } = {}) {
     body: form,
   });
 
-  // Retry up to 3 times on 429 rate-limit with exponential backoff
   if (!response.ok) {
-    if (response.status === 429) {
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        const delay = attempt * 3000; // 3s, 6s, 9s
-        console.warn(`[OCR.space] 429 rate limit — retrying in ${delay / 1000}s (attempt ${attempt}/3)`);
-        await new Promise(r => setTimeout(r, delay));
-        const retry = await fetch("https://api.ocr.space/parse/image", {
-          method: "POST",
-          headers: { apikey: apiKey },
-          body: form,
-        });
-        if (retry.ok) {
-          const retryPayload = await retry.json();
-          if (!retryPayload.IsErroredOnProcessing) {
-            return (retryPayload.ParsedResults || []).map(r => r.ParsedText || "").join("\n").trim();
-          }
-        }
-        if (retry.status !== 429) break; // Non-429 error — stop retrying
-      }
-    }
     throw new Error(`OCR.space request failed with status ${response.status}`);
   }
 
