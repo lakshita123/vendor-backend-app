@@ -45,7 +45,7 @@ app.use(cors({
     }
   },
   methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-admin-password"],
   credentials: true,
 }));
 
