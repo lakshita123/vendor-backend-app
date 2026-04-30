@@ -717,18 +717,19 @@ function isWeakAccountNumber(value) {
 }
 
 function hasDocumentToken(key, token) {
+  const normalizedKey = String(key || "");
   return (
-    key === token ||
-    key.startsWith(`${token}_`) ||
-    key.endsWith(`_${token}`) ||
-    key.includes(`_${token}_`)
+    normalizedKey === token ||
+    normalizedKey.startsWith(`${token}_`) ||
+    normalizedKey.endsWith(`_${token}`) ||
+    normalizedKey.includes(`_${token}_`)
   );
 }
 
 function buildDocumentMetadata(document, submission = {}) {
   const text = document.extractedText || "";
   const rawText = document.rawExtractedText || text;
-  const key = document.fieldname;
+  const key = String(document.fieldname || "");
   const isPanDocument = hasDocumentToken(key, "pan");
   const isGstDocument = key.includes("gst") || key.includes("gstr3b");
   const isAadhaarDocument = key.includes("aadhar");
@@ -1448,7 +1449,7 @@ function validateSubmission(submission, documents, faceResults) {
     );
   }
 
-  const gstr3bDocuments = documents.filter((doc) => doc.fieldname.startsWith("gstr3b_"));
+  const gstr3bDocuments = documents.filter((doc) => String(doc.fieldname || "").startsWith("gstr3b_"));
   if (gstr3bDocuments.length > 0 && gstr3bDocuments.length < 3) {
     pushIssue(
       issues,

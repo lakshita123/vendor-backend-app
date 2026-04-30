@@ -249,9 +249,12 @@ async function processSubmission({
       } catch (err) {
         console.error("[Processing] Read failed:", file.originalname, err.message);
         reviewedDocuments.push({
-          file: file.originalname,
-          text: "",
-          error: err.message,
+          ...file,
+          extractionStatus: "failed",
+          extractedText: "",
+          rawExtractedText: "",
+          totalPages: 0,
+          extractionError: err.message,
         });
       }
     }
