@@ -1,6 +1,7 @@
 const fs = require("fs/promises");
 const path = require("path");
 const { extractPdfText } = require("./pdfReader");
+const { readTextFromImage } = require("./ocrReader");
 const { validateSubmission } = require("./validation");
 const { generateIssueReport } = require("./reportGenerator");
 const { downloadFolderFiles, cleanupTempDir } = require("../googleDrive");
@@ -136,28 +137,51 @@ async function readDocumentLight(file) {
   const extension = path.extname(file.originalname || file.filename || "").toLowerCase();
   const isPdf = extension === ".pdf" || file.mimetype === "application/pdf";
 
-  if (!isPdf) {
+  const imageSourcePath = file.ocrSourcePath || file.sourcePath || null;
+  const canReadSourceImage = Boolean(file.convertedFromImage && imageSourcePath);
+
+  if (!isPdf && !canReadSourceImage) {
     return {
       ...file,
       extractionStatus: "skipped",
       extractedText: "",
       rawExtractedText: "",
       totalPages: 0,
-      extractionError: "Light review mode skips non-PDF OCR.",
+      extractionError: "No supported text extraction path found.",
     };
   }
 
   try {
-    const { text, totalPages } = await extractPdfText(file.path);
-    const normalizedText = String(text || "").replace(/\s+/g, " ").trim();
+    let pdfText = "";
+    let totalPages = 0;
+
+    if (isPdf) {
+      const pdfResult = await extractPdfText(file.path);
+      pdfText = String(pdfResult.text || "");
+      totalPages = Number.isFinite(pdfResult.totalPages) ? pdfResult.totalPages : 0;
+    }
+
+    let imageText = "";
+    if (canReadSourceImage) {
+      imageText = await withTimeout(
+        readTextFromImage(imageSourcePath),
+        PROCESSING_TIMEOUTS.documentReadMs,
+        `${file.originalname} image OCR`
+      );
+    }
+
+    const normalizedPdfText = String(pdfText || "").replace(/\s+/g, " ").trim();
+    const normalizedImageText = String(imageText || "").replace(/\s+/g, " ").trim();
+    const normalizedText =
+      normalizedImageText.length > normalizedPdfText.length ? normalizedImageText : normalizedPdfText;
 
     return {
       ...file,
       extractionStatus: normalizedText ? "success" : "empty",
       extractedText: normalizedText,
-      rawExtractedText: text || normalizedText,
+      rawExtractedText: normalizedText,
       totalPages: Number.isFinite(totalPages) ? totalPages : 0,
-      extractionError: normalizedText ? null : "No readable embedded PDF text found.",
+      extractionError: normalizedText ? null : "No readable text found in PDF or source image.",
     };
   } catch (error) {
     return buildFailedDocument(file, error.message);
@@ -234,10 +258,9 @@ async function processSubmission({
       preparedFiles = sourceFiles;
     }
 
-    const limitedFiles = preparedFiles.slice(0, 6);
     const reviewedDocuments = [];
 
-    for (const file of limitedFiles) {
+    for (const file of preparedFiles) {
       try {
         console.log("[Processing] Light-reading file:", file.originalname);
         const result = await withTimeout(
