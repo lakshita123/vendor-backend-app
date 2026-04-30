@@ -1,9 +1,8 @@
 const fs = require("fs/promises");
 const path = require("path");
-const { readDocument } = require("./pdfReader");
+const { extractPdfText } = require("./pdfReader");
 const { validateSubmission } = require("./validation");
 const { generateIssueReport } = require("./reportGenerator");
-const { compareGeoTagToDocuments } = require("./faceComparison");
 const { downloadFolderFiles, cleanupTempDir } = require("../googleDrive");
 const { prepareUploadedFiles } = require("./filePreparation");
 const { runtime } = require("../config/runtime");
@@ -14,8 +13,7 @@ const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const PROCESSING_TIMEOUTS = {
-  documentReadMs: 20000,
-  faceComparisonMs: 45000,
+  documentReadMs: 10000,
   reportGenerationMs: 30000,
   emailSendMs: 20000,
 };
@@ -53,46 +51,6 @@ async function sendReviewEmail({ to, cc, subject, text, html, reportPath }) {
     PROCESSING_TIMEOUTS.emailSendMs,
     "Review email send"
   );
-}
-
-async function runFaceComparisons(files) {
-  const authorizedPersonFile = files.find(
-    (f) =>
-      f.fieldname === "authorized_person_with_warehouse_photo" ||
-      f.fieldname === "authorized_person_photo"
-  );
-
-  const warehouseFile = files.find((f) => f.fieldname === "warehouse_photo");
-  const geoTagFile = authorizedPersonFile || warehouseFile;
-  if (!geoTagFile) return null;
-
-  const identityFiles = [];
-
-  const aadhaarFile = files.find((f) => f.fieldname && f.fieldname.includes("aadhar"));
-  if (aadhaarFile) {
-    identityFiles.push({ file: aadhaarFile, label: "Aadhaar" });
-  }
-
-  const panFile = files.find(
-    (f) =>
-      f.fieldname &&
-      (f.fieldname === "pan" ||
-        f.fieldname.startsWith("pan_") ||
-        f.fieldname.endsWith("_pan") ||
-        f.fieldname.includes("_pan_"))
-  );
-  if (panFile) {
-    identityFiles.push({ file: panFile, label: "PAN" });
-  }
-
-  if (!identityFiles.length) return null;
-
-  try {
-    return await compareGeoTagToDocuments(geoTagFile, identityFiles);
-  } catch (err) {
-    console.warn("[FaceComparison] Failed:", err.message);
-    return null;
-  }
 }
 
 async function updateRecordSafely(submissionId, updater) {
@@ -161,6 +119,49 @@ function buildApprovalHtml(driveFolderLink, submissionId) {
     <br/><br/>
     <p>Attached is the verification report.</p>
   `;
+}
+
+function buildFailedDocument(file, reason) {
+  return {
+    ...file,
+    extractionStatus: "failed",
+    extractedText: "",
+    rawExtractedText: "",
+    totalPages: 0,
+    extractionError: reason,
+  };
+}
+
+async function readDocumentLight(file) {
+  const extension = path.extname(file.originalname || file.filename || "").toLowerCase();
+  const isPdf = extension === ".pdf" || file.mimetype === "application/pdf";
+
+  if (!isPdf) {
+    return {
+      ...file,
+      extractionStatus: "skipped",
+      extractedText: "",
+      rawExtractedText: "",
+      totalPages: 0,
+      extractionError: "Light review mode skips non-PDF OCR.",
+    };
+  }
+
+  try {
+    const { text, totalPages } = await extractPdfText(file.path);
+    const normalizedText = String(text || "").replace(/\s+/g, " ").trim();
+
+    return {
+      ...file,
+      extractionStatus: normalizedText ? "success" : "empty",
+      extractedText: normalizedText,
+      rawExtractedText: text || normalizedText,
+      totalPages: Number.isFinite(totalPages) ? totalPages : 0,
+      extractionError: normalizedText ? null : "No readable embedded PDF text found.",
+    };
+  } catch (error) {
+    return buildFailedDocument(file, error.message);
+  }
 }
 
 async function processSubmission({
@@ -238,37 +239,23 @@ async function processSubmission({
 
     for (const file of limitedFiles) {
       try {
-        console.log("[Processing] Reading file:", file.originalname);
+        console.log("[Processing] Light-reading file:", file.originalname);
         const result = await withTimeout(
-          readDocument(file),
+          readDocumentLight(file),
           PROCESSING_TIMEOUTS.documentReadMs,
-          `${file.originalname} OCR`
+          `${file.originalname} light read`
         );
-        console.log("[Processing] Read complete:", file.originalname);
+        console.log("[Processing] Light-read complete:", file.originalname);
         reviewedDocuments.push(result);
       } catch (err) {
-        console.error("[Processing] Read failed:", file.originalname, err.message);
-        reviewedDocuments.push({
-          ...file,
-          extractionStatus: "failed",
-          extractedText: "",
-          rawExtractedText: "",
-          totalPages: 0,
-          extractionError: err.message,
-        });
+        console.error("[Processing] Light-read failed:", file.originalname, err.message);
+        reviewedDocuments.push(buildFailedDocument(file, err.message));
       }
     }
 
     console.log("[Processing] All files processed. Running validation...");
-
-    const faceResults = await withTimeout(
-      runFaceComparisons(preparedFiles),
-      PROCESSING_TIMEOUTS.faceComparisonMs,
-      "Face comparison"
-    ).catch((err) => {
-      console.warn("[Processing] Face comparison skipped:", err.message);
-      return null;
-    });
+    console.warn("[Processing] Face comparison disabled in light review mode.");
+    const faceResults = null;
 
     const validation = validateSubmission(submission, reviewedDocuments, faceResults);
 
