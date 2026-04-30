@@ -9,6 +9,9 @@ const { prepareUploadedFiles } = require("./filePreparation");
 const { runtime } = require("../config/runtime");
 const { updateSubmissionRecord } = require("./submissionStore");
 
+const { Resend } = require("resend");
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 
 async function runFaceComparisons(files) {
   // Support both old fieldname and new split fieldnames
@@ -172,7 +175,7 @@ async function processSubmission({
   if (runtime.enableReviewEmail) {
     try {
       await transporter.sendMail({
-        from: process.env.EMAIL_USER,
+        from: "onboarding@resend.dev",
         to: reviewRecipient,
         cc: process.env.CC_EMAILS,
         subject: `Vendor Submission Issues - ${submission.name || "Unknown Vendor"}`,
