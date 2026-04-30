@@ -14,7 +14,7 @@ const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // 🔥 ADD THIS (around line after resend init)
-function withTimeout(promise, ms = 8000) {
+function withTimeout(promise, ms = 20000) {
   return Promise.race([
     promise,
     new Promise((_, reject) =>
@@ -146,7 +146,7 @@ for (const file of limitedFiles) {
   try {
     console.log("📄 Processing file:", file.originalname);
 
-    const result = await withTimeout(readDocument(file), 8000);
+    const result = await withTimeout(readDocument(file),20000);
 
     console.log("✅ Done:", file.originalname);
 
@@ -157,9 +157,10 @@ for (const file of limitedFiles) {
 
     // still push empty so flow continues
     reviewedDocuments.push({
-      file: file.originalname,
-      error: err.message,
-    });
+	  file: file.originalname,
+	  text: "",
+	  error: err.message,
+	});
   }
 }
 console.log("📊 All files processed. Running validation...");
