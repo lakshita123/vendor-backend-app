@@ -12,6 +12,15 @@ const { updateSubmissionRecord } = require("./submissionStore");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// 🔥 ADD THIS (around line after resend init)
+function withTimeout(promise, ms = 15000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout")), ms)
+    ),
+  ]);
+}
 
 async function runFaceComparisons(files) {
   // Support both old fieldname and new split fieldnames
@@ -128,10 +137,29 @@ async function processSubmission({
     preparedFiles = sourceFiles;
   }
 
-  const reviewedDocuments = [];
-  for (const file of preparedFiles) {
-    reviewedDocuments.push(await readDocument(file));
+const reviewedDocuments = [];
+
+for (const file of preparedFiles) {
+  try {
+    console.log("📄 Processing file:", file.originalname);
+
+    const result = await withTimeout(readDocument(file), 15000);
+
+    console.log("✅ Done:", file.originalname);
+
+    reviewedDocuments.push(result);
+
+  } catch (err) {
+    console.error("❌ Failed:", file.originalname, err.message);
+
+    // still push empty so flow continues
+    reviewedDocuments.push({
+      file: file.originalname,
+      error: err.message,
+    });
   }
+}
+console.log("📊 All files processed. Running validation...");
 
   const faceResults = await runFaceComparisons(preparedFiles).catch((err) => {
     console.warn("[Processing] Face comparison error:", err.message);
