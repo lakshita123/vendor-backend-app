@@ -8,12 +8,13 @@ const { downloadFolderFiles, cleanupTempDir } = require("../googleDrive");
 const { prepareUploadedFiles } = require("./filePreparation");
 const { runtime } = require("../config/runtime");
 const { updateSubmissionRecord } = require("./submissionStore");
+require("events").EventEmitter.defaultMaxListeners = 20;
 
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // 🔥 ADD THIS (around line after resend init)
-function withTimeout(promise, ms = 15000) {
+function withTimeout(promise, ms = 8000) {
   return Promise.race([
     promise,
     new Promise((_, reject) =>
@@ -137,13 +138,15 @@ async function processSubmission({
     preparedFiles = sourceFiles;
   }
 
+
+const limitedFiles = preparedFiles.slice(0, 6);
 const reviewedDocuments = [];
 
-for (const file of preparedFiles) {
+for (const file of limitedFiles) {
   try {
     console.log("📄 Processing file:", file.originalname);
 
-    const result = await withTimeout(readDocument(file), 15000);
+    const result = await withTimeout(readDocument(file), 8000);
 
     console.log("✅ Done:", file.originalname);
 
@@ -167,6 +170,26 @@ console.log("📊 All files processed. Running validation...");
   });
 
   const validation = validateSubmission(submission, reviewedDocuments, faceResults);
+
+  /*console.log("📧 Preparing Email 2 early...");
+
+await resend.emails.send({
+  from: "onboarding@resend.dev",
+  to: process.env.REVIEW_EMAIL || process.env.EMAIL_USER,
+  subject: "📊 Vendor Processing Started",
+
+  html: `
+    <h2>📊 Processing Started</h2>
+    <p>Submission ID: ${submissionId}</p>
+    <p>Your documents are being processed.</p>
+
+    <p><b>Drive Folder:</b></p>
+    <a href="${driveFolderLink}">${driveFolderLink}</a>
+  `,
+});
+
+console.log("✅ Email 2 (early) sent");
+*/
 
   await cleanupTempDir(driveFiles);
 
