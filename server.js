@@ -22,9 +22,13 @@ const { processSubmission } = require("./services/documentProcessor");
 const { prepareUploadedFiles } = require("./services/filePreparation");
 const {
   createSubmissionRecord,
+  listSubmissionRecords,
   readSubmissionRecord,
   lookupByPhone,
+  sanitizeReviewStatus,
+  updateSubmissionRecord,
 } = require("./services/submissionStore");
+const { validateExtractedDocuments } = require("./services/validation");
 
 const app = express();
 
@@ -119,6 +123,100 @@ function parseOptionalBoolean(value) {
   }
 
   return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
+
+function getAdminPassword() {
+  return String(process.env.ADMIN_DASHBOARD_PASSWORD || "").trim();
+}
+
+function readAdminPasswordFromRequest(req) {
+  return String(
+    req.headers["x-admin-password"] ||
+    req.body?.password ||
+    req.query?.password ||
+    ""
+  ).trim();
+}
+
+function requireAdmin(req, res, next) {
+  const configuredPassword = getAdminPassword();
+  if (!configuredPassword) {
+    return res.status(503).json({ success: false, error: "ADMIN_DASHBOARD_PASSWORD is not configured." });
+  }
+
+  if (readAdminPasswordFromRequest(req) !== configuredPassword) {
+    return res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+
+  next();
+}
+
+function buildVendorGroupKey(record) {
+  return [
+    String(record?.submission?.name || "").trim().toLowerCase(),
+    String(record?.submission?.phone || "").trim(),
+  ].join("::");
+}
+
+function buildAdminList(records) {
+  const groups = new Map();
+
+  for (const record of records) {
+    const key = buildVendorGroupKey(record);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        vendorKey: key,
+        vendorName: record?.submission?.name || "Unknown Vendor",
+        phone: record?.submission?.phone || "",
+        latestSubmissionId: record.submissionId,
+        latestCreatedAt: record.createdAt,
+        submissions: [],
+      });
+    }
+
+    const group = groups.get(key);
+    group.submissions.push({
+      submissionId: record.submissionId,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      status: record.status,
+      reviewStatus: record.review?.reviewStatus || "Pending",
+      validationStatus: record.review?.validation?.status || record.processing?.validationStatus || null,
+      issuesCount: Array.isArray(record.review?.validation?.issues)
+        ? record.review.validation.issues.length
+        : record.processing?.issuesCount,
+      vendorName: record?.submission?.name || "Unknown Vendor",
+      phone: record?.submission?.phone || "",
+      displayLabel: [
+        record?.submission?.name || "Unknown Vendor",
+        record?.submission?.phone || "No phone",
+        record.createdAt ? new Date(record.createdAt).toLocaleString("en-IN") : "No date",
+      ].join(" | "),
+    });
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      submissions: group.submissions.sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt))),
+    }))
+    .sort((left, right) => String(right.latestCreatedAt).localeCompare(String(left.latestCreatedAt)));
+}
+
+function buildAdminSubmissionDetail(record) {
+  return {
+    submissionId: record.submissionId,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    status: record.status,
+    source: record.source,
+    driveFolderId: record.driveFolderId,
+    driveFolderLink: record.driveFolderLink,
+    uploadedFiles: record.uploadedFiles || [],
+    submission: record.submission || {},
+    processing: record.processing || {},
+    review: record.review || {},
+  };
 }
 
 /*
@@ -306,8 +404,6 @@ app.post("/submit", uploadFields, async (req, res) => {
 
     // ── Everything below runs after response is sent ──
     setImmediate(async () => {
-      const { updateSubmissionRecord } = require("./services/submissionStore");
-
       let folderId   = existingFolderId || null;
       let folderLink = existingFolderId
         ? String(inputDriveFolderLink || `https://drive.google.com/drive/folders/${existingFolderId}`)
@@ -318,10 +414,23 @@ app.post("/submit", uploadFields, async (req, res) => {
         try {
           const preparedFiles = await prepareUploadedFiles(uploadedFilesArr);
           folderId = await createFolder(`${name}_${constitution}_${vendorType}_${Date.now()}`);
+          const driveUploadEntries = [];
 
           for (const file of preparedFiles) {
             const ext = path.extname(file.originalname || "") || "";
-            await uploadFile({ ...file, originalname: `${file.fieldname}${ext}` }, folderId);
+            const uploadedDriveFile = await uploadFile(
+              { ...file, originalname: `${file.fieldname}${ext}` },
+              folderId
+            );
+            driveUploadEntries.push({
+              fieldname: file.fieldname,
+              originalname: file.originalname,
+              mimetype: file.mimetype,
+              size: file.size,
+              driveFileId: uploadedDriveFile?.id || null,
+              driveWebViewLink: uploadedDriveFile?.webViewLink || null,
+              driveDownloadLink: uploadedDriveFile?.webContentLink || null,
+            });
           }
 
           folderLink = await makePublic(folderId);
@@ -331,6 +440,7 @@ app.post("/submit", uploadFields, async (req, res) => {
             ...record,
             driveFolderId:   folderId,
             driveFolderLink: folderLink,
+            uploadedFiles: driveUploadEntries.length ? driveUploadEntries : record.uploadedFiles,
           })).catch(() => {});
 
         } catch (driveErr) {
@@ -371,7 +481,7 @@ app.post("/submit", uploadFields, async (req, res) => {
 			<a href="${folderLink}" target="_blank">${folderLink}</a>
 
 			<br/><br/>
-			<p>Analysis report will follow shortly.</p>
+			<p>The submission is available in the internal review dashboard.</p>
 		  `,
 		});
           console.log("[Email] Submission email (email 1) sent.");
@@ -481,6 +591,122 @@ app.get("/lookup-phone/:phone", async (req, res) => {
 /* ══════════════════════════════════════════════════════════════
    POST /compare-faces
 ══════════════════════════════════════════════════════════════ */
+app.post("/admin/auth", (req, res) => {
+  const configuredPassword = getAdminPassword();
+  if (!configuredPassword) {
+    return res.status(503).json({ success: false, error: "ADMIN_DASHBOARD_PASSWORD is not configured." });
+  }
+
+  if (readAdminPasswordFromRequest(req) !== configuredPassword) {
+    return res.status(401).json({ success: false, error: "Invalid password" });
+  }
+
+  return res.json({ success: true });
+});
+
+app.get("/admin/submissions", requireAdmin, async (req, res) => {
+  try {
+    const records = await listSubmissionRecords();
+    return res.json({
+      success: true,
+      groups: buildAdminList(records),
+    });
+  } catch (error) {
+    console.error("[Admin] List submissions failed:", error);
+    return res.status(500).json({ success: false, error: "Could not load submissions." });
+  }
+});
+
+app.get("/admin/submissions/:submissionId", requireAdmin, async (req, res) => {
+  try {
+    const record = await readSubmissionRecord(req.params.submissionId);
+    return res.json({
+      success: true,
+      submission: buildAdminSubmissionDetail(record),
+    });
+  } catch (error) {
+    return res.status(404).json({ success: false, error: "Submission not found" });
+  }
+});
+
+app.post("/admin/submissions/:submissionId/review", requireAdmin, async (req, res) => {
+  try {
+    const submissionId = req.params.submissionId;
+    const record = await readSubmissionRecord(submissionId);
+    const body = req.body || {};
+    const action = String(body.action || "save_draft").trim().toLowerCase();
+    const nowIso = new Date().toISOString();
+
+    const nextFormData = {
+      ...(record.review?.formData || record.submission || {}),
+      ...((body.submission && typeof body.submission === "object") ? body.submission : {}),
+    };
+
+    const nextExtractedDocuments = Array.isArray(body.extractedDocuments)
+      ? body.extractedDocuments.map((document) => ({
+          ...document,
+          key: String(document.key || ""),
+          originalname: document.originalname || document.key || "Document",
+          extractionStatus: document.extractionStatus || "success",
+          extractionError: document.extractionError || null,
+          totalPages: Number.isFinite(document.totalPages) ? document.totalPages : 0,
+          identifiers: document.identifiers || {},
+          extractedData: document.extractedData || {},
+          entityName: document.entityName || "",
+          textSample: document.textSample || "",
+        }))
+      : (record.review?.extractedDocuments || []);
+
+    const validation = validateExtractedDocuments(
+      nextFormData,
+      nextExtractedDocuments,
+      record.review?.faceResults || []
+    );
+
+    const requestedStatus = body.reviewStatus ? sanitizeReviewStatus(body.reviewStatus) : null;
+    const nextReviewStatus =
+      action === "mark_approved" ? "Approved"
+      : action === "mark_rejected" ? "Rejected"
+      : requestedStatus || record.review?.reviewStatus || "Pending";
+
+    const updatedRecord = await updateSubmissionRecord(submissionId, (current) => ({
+      ...current,
+      submission: {
+        ...current.submission,
+        ...nextFormData,
+      },
+      processing: {
+        ...current.processing,
+        validationStatus: validation.status,
+        issuesCount: validation.issues.length,
+        error: null,
+      },
+      review: {
+        ...current.review,
+        reviewStatus: nextReviewStatus,
+        reviewerNotes: typeof body.reviewerNotes === "string"
+          ? body.reviewerNotes
+          : current.review?.reviewerNotes || "",
+        formData: nextFormData,
+        extractedDocuments: nextExtractedDocuments,
+        validation,
+        faceResults: current.review?.faceResults || [],
+        savedAt: nowIso,
+        lastValidatedAt: nowIso,
+      },
+    }));
+
+    return res.json({
+      success: true,
+      action,
+      submission: buildAdminSubmissionDetail(updatedRecord),
+    });
+  } catch (error) {
+    console.error("[Admin] Review update failed:", error);
+    return res.status(500).json({ success: false, error: "Could not save review changes." });
+  }
+});
+
 const { compareFaces } = require("./services/faceComparison");
 const faceUpload = multer({ storage }).fields([
   { name: "face1", maxCount: 1 },

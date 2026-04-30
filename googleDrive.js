@@ -32,7 +32,7 @@ async function createFolder(name) {
 
 // 📤 UPLOAD FILE
 async function uploadFile(file, folderId) {
-  await drive.files.create({
+  const response = await drive.files.create({
     requestBody: {
       name: file.originalname,
       parents: [folderId],
@@ -41,7 +41,10 @@ async function uploadFile(file, folderId) {
       mimeType: file.mimetype,
       body: fs.createReadStream(file.path),
     },
+    fields: "id,name,webViewLink,webContentLink,mimeType,size",
   });
+
+  return response.data;
 }
 
 
@@ -77,7 +80,7 @@ function extractFolderId(input) {
 async function listFolderFiles(folderId) {
   const res = await drive.files.list({
     q: `'${folderId}' in parents and trashed = false`,
-    fields: "files(id, name, mimeType, size)",
+    fields: "files(id, name, mimeType, size, webViewLink, webContentLink)",
     pageSize: 100,
   });
   return res.data.files || [];
@@ -131,6 +134,9 @@ async function downloadFolderFiles(folderId) {
           mimetype: driveFile.mimeType || "application/octet-stream",
           path: destPath,
           size: Number(driveFile.size || 0),
+          driveFileId: driveFile.id || null,
+          driveWebViewLink: driveFile.webViewLink || null,
+          driveDownloadLink: driveFile.webContentLink || null,
           _tempDir: tempDir,
         };
       } catch (err) {

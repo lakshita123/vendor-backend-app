@@ -4,6 +4,7 @@ const crypto = require("crypto");
 
 const submissionsDir = path.join(__dirname, "..", "data", "submissions");
 const phoneIndexPath = path.join(__dirname, "..", "data", "phone-index.json");
+const REVIEW_STATUSES = ["Pending", "In Review", "Approved", "Rejected", "Needs Clarification"];
 
 async function ensureStore() {
   await fs.mkdir(submissionsDir, { recursive: true });
@@ -22,11 +23,64 @@ function getSubmissionPath(submissionId) {
   return path.join(submissionsDir, `${submissionId}.json`);
 }
 
+function buildDefaultReview(submission = {}) {
+  return {
+    reviewStatus: "Pending",
+    reviewerNotes: "",
+    formData: { ...submission },
+    extractedDocuments: [],
+    validation: null,
+    faceResults: [],
+    lastProcessedAt: null,
+    lastValidatedAt: null,
+    savedAt: null,
+  };
+}
+
+function sanitizeReviewStatus(status) {
+  return REVIEW_STATUSES.includes(status) ? status : "Pending";
+}
+
+function normalizeRecord(record) {
+  const submission = record && record.submission ? record.submission : {};
+  return {
+    ...record,
+    submission,
+    uploadedFiles: Array.isArray(record.uploadedFiles) ? record.uploadedFiles : [],
+    processing: {
+      startedAt: null,
+      completedAt: null,
+      reviewEmailSent: false,
+      reportPath: null,
+      reason: null,
+      issuesCount: null,
+      validationStatus: null,
+      error: null,
+      ...(record.processing || {}),
+    },
+    review: {
+      ...buildDefaultReview(submission),
+      ...(record.review || {}),
+      formData: {
+        ...submission,
+        ...((record.review && record.review.formData) || {}),
+      },
+      extractedDocuments: Array.isArray(record.review && record.review.extractedDocuments)
+        ? record.review.extractedDocuments
+        : [],
+      faceResults: Array.isArray(record.review && record.review.faceResults)
+        ? record.review.faceResults
+        : [],
+      reviewStatus: sanitizeReviewStatus(record.review && record.review.reviewStatus),
+    },
+  };
+}
+
 async function writeSubmission(submissionId, payload) {
   await ensureStore();
   await fs.writeFile(
     getSubmissionPath(submissionId),
-    JSON.stringify(payload, null, 2),
+    JSON.stringify(normalizeRecord(payload), null, 2),
     "utf8"
   );
 }
@@ -96,6 +150,7 @@ async function createSubmissionRecord({
       validationStatus: null,
       error: null,
     },
+    review: buildDefaultReview(submission),
   };
 
   await writeSubmission(submissionId, record);
@@ -120,12 +175,14 @@ async function createSubmissionRecord({
 
 async function readSubmissionRecord(submissionId) {
   const raw = await fs.readFile(getSubmissionPath(submissionId), "utf8");
-  return JSON.parse(raw);
+  return normalizeRecord(JSON.parse(raw));
 }
 
 async function updateSubmissionRecord(submissionId, updater) {
   const current = await readSubmissionRecord(submissionId);
-  const next = typeof updater === "function" ? await updater(current) : { ...current, ...updater };
+  const next = normalizeRecord(
+    typeof updater === "function" ? await updater(current) : { ...current, ...updater }
+  );
   next.updatedAt = nowIso();
   await writeSubmission(submissionId, next);
 
@@ -147,9 +204,37 @@ async function updateSubmissionRecord(submissionId, updater) {
   return next;
 }
 
+async function listSubmissionIds() {
+  await ensureStore();
+  const names = await fs.readdir(submissionsDir);
+  return names
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => name.replace(/\.json$/i, ""));
+}
+
+async function listSubmissionRecords() {
+  const ids = await listSubmissionIds();
+  const records = await Promise.all(
+    ids.map(async (submissionId) => {
+      try {
+        return await readSubmissionRecord(submissionId);
+      } catch (_) {
+        return null;
+      }
+    })
+  );
+
+  return records
+    .filter(Boolean)
+    .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")));
+}
+
 module.exports = {
+  REVIEW_STATUSES,
   createSubmissionRecord,
+  listSubmissionRecords,
   readSubmissionRecord,
+  sanitizeReviewStatus,
   updateSubmissionRecord,
   lookupByPhone,
 };

@@ -1149,9 +1149,8 @@ function buildFaceChecks(faceResults, issues) {
 }
 
 
-function validateSubmission(submission, documents, faceResults) {
+function finalizeValidation(submission, documents, extractedDocuments, faceResults) {
   const issues = [];
-  const extractedDocuments = documents.map((document) => buildDocumentMetadata(document, submission));
   const gstDocument = getDocumentByKey(extractedDocuments, "company_gst");
   const aadhaarDocument = extractedDocuments.find((doc) => doc.key.includes("aadhar")) || null;
   const panDocument = extractedDocuments.find((doc) => hasDocumentToken(doc.key, "pan")) || null;
@@ -1527,6 +1526,25 @@ function validateSubmission(submission, documents, faceResults) {
   };
 }
 
+function validateSubmission(submission, documents, faceResults) {
+  const extractedDocuments = documents.map((document) => buildDocumentMetadata(document, submission));
+  return finalizeValidation(submission, documents, extractedDocuments, faceResults);
+}
+
+function validateExtractedDocuments(submission, extractedDocuments, faceResults) {
+  const documents = (extractedDocuments || []).map((document) => ({
+    fieldname: document.key,
+    originalname: document.originalname,
+    extractionStatus: document.extractionStatus,
+    extractionError: document.extractionError,
+    totalPages: document.totalPages,
+  }));
+
+  return finalizeValidation(submission, documents, extractedDocuments || [], faceResults);
+}
+
 module.exports = {
+  buildDocumentMetadata,
+  validateExtractedDocuments,
   validateSubmission,
 };
