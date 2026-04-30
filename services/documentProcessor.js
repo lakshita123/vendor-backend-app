@@ -70,6 +70,7 @@ async function processSubmission({
   driveFolderLink,
   submissionId,
 }) {
+	console.log("🚀 processSubmission started");
   let driveFiles = [];
   let sourceFiles = Array.isArray(files) ? files : [];
 
@@ -141,23 +142,74 @@ async function processSubmission({
 
   await cleanupTempDir(driveFiles);
 
-  if (!validation.issues.length) {
-    console.log("[Processing] No issues found, review email not sent.");
+ if (!validation.issues.length) {
+  console.log("[Processing] No issues found — sending clean report.");
+
+  const reportsDir = path.join(__dirname, "..", "reports");
+  await fs.mkdir(reportsDir, { recursive: true });
+
+  const reportPath = await generateIssueReport({
+    submission,
+    validation,
+    outputDir: reportsDir,
+  });
+
+  const reviewRecipient = process.env.REVIEW_EMAIL || process.env.EMAIL_USER;
+
+  try {
+    await resend.emails.send({
+      from: "onboarding@resend.dev",
+      to: reviewRecipient,
+      cc: process.env.CC_EMAILS,
+
+      subject: `✅ Vendor Approved - ${submission.name || "Unknown Vendor"}`,
+
+      html: `
+        <h2>✅ Vendor Submission Approved</h2>
+
+        <p><b>Submission ID:</b> ${submissionId}</p>
+
+        <p>No issues were found in the submitted documents.</p>
+
+        <p><b>Drive Folder:</b></p>
+        <a href="${driveFolderLink}" target="_blank">${driveFolderLink}</a>
+
+        <br/><br/>
+        <p>Attached is the verification report.</p>
+      `,
+
+      attachments: [
+        {
+          filename: path.basename(reportPath),
+          path: reportPath,
+        },
+      ],
+    });
+
+    console.log("✅ Clean report email sent");
+
     await updateRecordSafely(submissionId, (record) => ({
       ...record,
       status: "completed",
       processing: {
         ...record.processing,
         completedAt: new Date().toISOString(),
-        reviewEmailSent: false,
-        reportPath: null,
-        reason: "No issues detected",
+        reviewEmailSent: true,
+        reportPath,
+        reason: "No issues detected (report sent)",
         issuesCount: 0,
         validationStatus: validation.status,
       },
     }));
-    return { sent: false, reason: "No issues detected", validation };
+
+    return { sent: true, reportPath, validation };
+
+  } catch (error) {
+    console.error("[Processing] Clean report email failed:", error);
+
+    return { sent: false, reason: error.message };
   }
+}
 
   const reportsDir = path.join(__dirname, "..", "reports");
   await fs.mkdir(reportsDir, { recursive: true });
@@ -171,10 +223,10 @@ async function processSubmission({
   const reviewRecipient = process.env.REVIEW_EMAIL || process.env.EMAIL_USER;
   let reviewEmailSent = false;
   let completionReason = runtime.enableReviewEmail ? "Review email sent" : "Review email skipped";
-
+console.log("📧 Preparing Email 2...");
   if (runtime.enableReviewEmail) {
     try {
-      await transporter.sendMail({
+      await resend.emails.send({
         from: "onboarding@resend.dev",
         to: reviewRecipient,
         cc: process.env.CC_EMAILS,
@@ -201,6 +253,7 @@ async function processSubmission({
         attachments: [{ filename: path.basename(reportPath), path: reportPath }],
       });
       reviewEmailSent = true;
+	  console.log("✅ Email 2 sent");
       console.log(`[Processing] Review email sent. Report: ${reportPath}`);
     } catch (error) {
       completionReason = `Review email failed: ${error.message}`;
