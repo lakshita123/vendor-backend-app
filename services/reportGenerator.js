@@ -41,6 +41,14 @@ function safeText(value) {
   return String(value).replace(/\s+/g, " ").trim() || "Not available";
 }
 
+function isParsedSuccess(status) {
+  return status === "success";
+}
+
+function isPartialSuccess(status) {
+  return status === "partial";
+}
+
 function statusLabel(status) {
   return status === "clear" ? "Looks Good" : "Needs Review";
 }
@@ -168,7 +176,14 @@ function drawSummaryCards(doc, validation) {
 
   const cards = [
     { label: "Docs Uploaded", value: validation.summary.totalDocuments, fill: COLORS.infoSoft, stroke: "#bfd4ff", text: COLORS.info },
-    { label: "Readable Files", value: validation.summary.readableDocuments, fill: COLORS.successSoft, stroke: COLORS.successMid, text: COLORS.success },
+    { label: "Parsed Files", value: validation.summary.readableDocuments, fill: COLORS.successSoft, stroke: COLORS.successMid, text: COLORS.success },
+    {
+      label: "Partial Reads",
+      value: validation.summary.partialDocuments || 0,
+      fill: (validation.summary.partialDocuments || 0) ? COLORS.warningSoft : COLORS.surface,
+      stroke: (validation.summary.partialDocuments || 0) ? "#f2d38a" : COLORS.border,
+      text: (validation.summary.partialDocuments || 0) ? "#9a6700" : COLORS.muted,
+    },
     { label: "Checks Passed", value: `${passedRegular}/${regularChecks.length}`, fill: COLORS.purpleSoft, stroke: "#d0bcff", text: COLORS.purple },
     {
       label: "Face Checks",
@@ -270,7 +285,11 @@ function drawDocumentCards(doc, documents) {
 
     drawRoundedCard(doc, { x, y, w: cw, h: cardH, fill: "#ffffff", stroke: COLORS.border, r: 12 });
 
-    const dotColor = document.extractionStatus === "success" ? COLORS.success : COLORS.warning;
+    const dotColor = isParsedSuccess(document.extractionStatus)
+      ? COLORS.success
+      : isPartialSuccess(document.extractionStatus)
+        ? COLORS.warning
+        : COLORS.danger;
     doc.save().circle(x + 17, y + 17, 4).fill(dotColor).restore();
 
     doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(9.5).text(`${index + 1}. ${formatLabel(document.key)}`, x + 28, y + 10, {
@@ -282,9 +301,11 @@ function drawDocumentCards(doc, documents) {
       lineBreak: false,
     });
 
-    const sc = document.extractionStatus === "success"
+    const sc = isParsedSuccess(document.extractionStatus)
       ? { fill: COLORS.successSoft, stroke: COLORS.successMid, text: COLORS.success }
-      : { fill: COLORS.warningSoft, stroke: "#f2d38a", text: "#9a6700" };
+      : isPartialSuccess(document.extractionStatus)
+        ? { fill: COLORS.warningSoft, stroke: "#f2d38a", text: "#9a6700" }
+        : { fill: COLORS.dangerSoft, stroke: COLORS.dangerMid, text: COLORS.danger };
     drawRoundedCard(doc, { x: x + cw - 100, y: y + 11, w: 86, h: 18, fill: sc.fill, stroke: sc.stroke, r: 9 });
     doc.fillColor(sc.text).font("Helvetica-Bold").fontSize(7).text(String(document.extractionStatus || "unknown").toUpperCase(), x + cw - 100, y + 17, {
       width: 86,
@@ -293,12 +314,28 @@ function drawDocumentCards(doc, documents) {
     });
 
     if (!rows.length) {
-      const emptyMsg = document.extractionStatus === "success"
+      const emptyMsg = isParsedSuccess(document.extractionStatus)
         ? "File read successfully — no text fields could be extracted (image-only or scanned)."
         : "No useful fields extracted.";
-      doc.fillColor(COLORS.muted).font("Helvetica").fontSize(8.5).text(emptyMsg, x + 12, y + 40, {
-        lineBreak: false,
+      const resolvedEmptyMsg = isPartialSuccess(document.extractionStatus)
+        ? "Text was detected, but no reliable structured fields were extracted."
+        : isParsedSuccess(document.extractionStatus)
+          ? "File parsed successfully."
+          : emptyMsg;
+      doc.fillColor(COLORS.muted).font("Helvetica").fontSize(8.5).text(resolvedEmptyMsg, x + 12, y + 40, {
+        width: cw - 24,
+        lineBreak: true,
       });
+      if (document.textSample) {
+        doc.fillColor(COLORS.info).font("Helvetica-Bold").fontSize(7).text("TEXT PREVIEW", x + 12, y + 56, {
+          width: cw - 24,
+          lineBreak: false,
+        });
+        doc.fillColor(COLORS.ink).font("Helvetica").fontSize(8).text(safeText(document.textSample).slice(0, 220), x + 12, y + 66, {
+          width: cw - 24,
+          lineBreak: true,
+        });
+      }
     } else {
       const colW = (cw - 24) / 2;
       rows.forEach((row, ri) => {
@@ -551,7 +588,9 @@ function computeAccuracy(validation) {
   const summary = validation.summary || {};
   const checks = (validation.validationChecks || []).filter((c) => !c.isFaceCheck);
   const faceChecks = (validation.validationChecks || []).filter((c) => c.isFaceCheck);
-  const readableRatio = summary.totalDocuments ? summary.readableDocuments / Math.max(summary.totalDocuments, 1) : 1;
+  const weightedReadable =
+    (summary.readableDocuments || 0) + ((summary.partialDocuments || 0) * 0.4);
+  const readableRatio = summary.totalDocuments ? weightedReadable / Math.max(summary.totalDocuments, 1) : 1;
   const passedRatio = checks.length ? checks.filter((c) => c.passed).length / checks.length : 1;
   const facePenalty = faceChecks.filter((c) => !c.passed).length * 0.12;
   const penalty = Math.min((validation.issues || []).length * 0.03, 0.35) + facePenalty;

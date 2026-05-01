@@ -13,7 +13,7 @@ require("events").EventEmitter.defaultMaxListeners = 20;
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const PROCESSING_TIMEOUTS = {
-  documentReadMs: 10000,
+  documentReadMs: 45000,
   reportGenerationMs: 30000,
   emailSendMs: 20000,
 };

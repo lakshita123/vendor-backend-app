@@ -726,6 +726,72 @@ function hasDocumentToken(key, token) {
   );
 }
 
+function isGeoDocumentKey(key) {
+  const normalizedKey = String(key || "");
+  return (
+    normalizedKey === "geo_tag_photo" ||
+    normalizedKey === "authorized_person_with_warehouse_photo" ||
+    normalizedKey === "warehouse_photo" ||
+    normalizedKey === "authorized_person_photo"
+  );
+}
+
+function hasMeaningfulValue(value) {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    return Boolean(value.trim());
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+
+  if (typeof value === "boolean") {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((item) => hasMeaningfulValue(item));
+  }
+
+  if (typeof value === "object") {
+    return Object.values(value).some((item) => hasMeaningfulValue(item));
+  }
+
+  return false;
+}
+
+function countMeaningfulValues(value) {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+
+  if (typeof value === "string") {
+    return value.trim() ? 1 : 0;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? 1 : 0;
+  }
+
+  if (typeof value === "boolean") {
+    return 1;
+  }
+
+  if (Array.isArray(value)) {
+    return value.reduce((sum, item) => sum + countMeaningfulValues(item), 0);
+  }
+
+  if (typeof value === "object") {
+    return Object.values(value).reduce((sum, item) => sum + countMeaningfulValues(item), 0);
+  }
+
+  return 0;
+}
+
 function buildDocumentMetadata(document, submission = {}) {
   const text = document.extractedText || "";
   const rawText = document.rawExtractedText || text;
@@ -769,32 +835,57 @@ function buildDocumentMetadata(document, submission = {}) {
     Object.assign(extractedData, extractGstr3bData(rawText));
   }
 
-  if (key === "geo_tag_photo" || key === "authorized_person_with_warehouse_photo") {
+  if (isGeoDocumentKey(key)) {
+    const isAuthorizedPersonPhoto = key === "authorized_person_photo" || key === "authorized_person_with_warehouse_photo";
     Object.assign(extractedData, {
-      geoAddress: normalizeText(submission.geoAddress),
-      geoLatitude: normalizeText(submission.geoLatitude),
-      geoLongitude: normalizeText(submission.geoLongitude),
-      geoCapturedAt: normalizeText(submission.geoCapturedAt),
-      geoMapsUrl: normalizeText(submission.geoMapsUrl),
+      geoAddress: normalizeText(
+        isAuthorizedPersonPhoto ? submission.authorizedPersonGeoAddress : submission.geoAddress
+      ),
+      geoLatitude: normalizeText(
+        isAuthorizedPersonPhoto ? submission.authorizedPersonGeoLatitude : submission.geoLatitude
+      ),
+      geoLongitude: normalizeText(
+        isAuthorizedPersonPhoto ? submission.authorizedPersonGeoLongitude : submission.geoLongitude
+      ),
+      geoCapturedAt: normalizeText(
+        isAuthorizedPersonPhoto ? submission.authorizedPersonGeoCapturedAt : submission.geoCapturedAt
+      ),
+      geoMapsUrl: normalizeText(
+        isAuthorizedPersonPhoto ? submission.authorizedPersonGeoMapsUrl : submission.geoMapsUrl
+      ),
     });
   }
+
+  const identifiers = {
+    pan: isPanDocument ? extractPan(text) : null,
+    gstin: isGstDocument ? extractGstin(text) : null,
+    aadhaar: isAadhaarDocument ? extractAadhaar(text) : null,
+    cin: isCinDocument ? extractCin(text) : null,
+    msme: isMsmeDocument ? extractMsme(text) : null,
+  };
+
+  const entityName = extractEntityName(text);
+  const hasMeaningfulParsedData =
+    hasMeaningfulValue(identifiers) ||
+    hasMeaningfulValue(extractedData) ||
+    hasMeaningfulValue(entityName);
+  const normalizedTextSample = text.slice(0, 500);
+  const derivedExtractionStatus =
+    document.extractionStatus === "success" && !hasMeaningfulParsedData && normalizeText(text)
+      ? "partial"
+      : document.extractionStatus;
 
   return {
     key,
     originalname: document.originalname,
-    extractionStatus: document.extractionStatus,
+    extractionStatus: derivedExtractionStatus,
     extractionError: document.extractionError,
     totalPages: document.totalPages,
-    identifiers: {
-      pan: isPanDocument ? extractPan(text) : null,
-      gstin: isGstDocument ? extractGstin(text) : null,
-      aadhaar: isAadhaarDocument ? extractAadhaar(text) : null,
-      cin: isCinDocument ? extractCin(text) : null,
-      msme: isMsmeDocument ? extractMsme(text) : null,
-    },
+    identifiers,
     extractedData,
-    entityName: extractEntityName(text),
-    textSample: text.slice(0, 500),
+    entityName,
+    textSample: normalizedTextSample,
+    extractedFieldCount: countMeaningfulValues(identifiers) + countMeaningfulValues(extractedData) + countMeaningfulValues(entityName),
   };
 }
 
@@ -1254,7 +1345,7 @@ function finalizeValidation(submission, documents, extractedDocuments, faceResul
 
   extractedDocuments.forEach((document) => {
     if (
-      (document.key === "geo_tag_photo" || document.key === "authorized_person_with_warehouse_photo") &&
+      isGeoDocumentKey(document.key) &&
       document.extractionStatus !== "success"
     ) {
       return;
@@ -1271,11 +1362,17 @@ function finalizeValidation(submission, documents, extractedDocuments, faceResul
     }
 
     if (document.extractionStatus !== "success") {
+      const detail =
+        document.extractionStatus === "partial"
+          ? `${document.originalname} was readable, but no reliable structured fields could be extracted automatically.`
+          : `${document.originalname} could not be read automatically. ${document.extractionError}`;
       pushIssue(
         issues,
         "medium",
-        `Unreadable document: ${document.key}`,
-        `${document.originalname} could not be read automatically. ${document.extractionError}`
+        document.extractionStatus === "partial"
+          ? `Low-confidence extraction: ${document.key}`
+          : `Unreadable document: ${document.key}`,
+        detail
       );
       return;
     }
@@ -1521,6 +1618,7 @@ function finalizeValidation(submission, documents, extractedDocuments, faceResul
     summary: {
       totalDocuments: documents.length,
       readableDocuments: extractedDocuments.filter((doc) => doc.extractionStatus === "success").length,
+      partialDocuments: extractedDocuments.filter((doc) => doc.extractionStatus === "partial").length,
       unreadableDocuments: extractedDocuments.filter((doc) => doc.extractionStatus !== "success").length,
     },
   };
