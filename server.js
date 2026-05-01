@@ -32,13 +32,46 @@ const { validateExtractedDocuments } = require("./services/validation");
 
 const app = express();
 
-const allowedOrigins = process.env.FRONTEND_ORIGIN
-  ? process.env.FRONTEND_ORIGIN.split(",").map(o => o.trim())
-  : ["*"];
+function normalizeOrigin(value) {
+  return String(value || "").trim().replace(/\/+$/, "").toLowerCase();
+}
+
+function parseAllowedOrigins() {
+  const configured = String(process.env.FRONTEND_ORIGIN || "")
+    .split(",")
+    .map(normalizeOrigin)
+    .filter(Boolean);
+
+  return new Set([
+    ...configured,
+    "https://clairgies.com",
+    "https://www.clairgies.com",
+  ]);
+}
+
+function isAllowedOrigin(origin, allowedOrigins) {
+  if (!origin) return true;
+
+  const normalizedOrigin = normalizeOrigin(origin);
+  if (!normalizedOrigin) return true;
+  if (allowedOrigins.has("*") || allowedOrigins.has(normalizedOrigin)) return true;
+
+  try {
+    const { hostname, protocol } = new URL(normalizedOrigin);
+    return (
+      protocol === "https:" &&
+      (hostname === "clairgies.com" || hostname.endsWith(".clairgies.com"))
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+const allowedOrigins = parseAllowedOrigins();
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (allowedOrigins.includes("*") || !origin || allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin, allowedOrigins)) {
       callback(null, true);
     } else {
       callback(new Error(`CORS: origin ${origin} not allowed`));
