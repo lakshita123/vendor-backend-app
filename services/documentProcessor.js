@@ -1,14 +1,21 @@
+const fs = require("fs/promises");
 const path = require("path");
+const { Resend } = require("resend");
 const { extractPdfText } = require("./pdfReader");
 const { readTextFromImage } = require("./ocrReader");
 const { validateSubmission } = require("./validation");
+const { generateIssueReport } = require("./reportGenerator");
 const { downloadFolderFiles, cleanupTempDir } = require("../googleDrive");
 const { prepareUploadedFiles } = require("./filePreparation");
 const { updateSubmissionRecord } = require("./submissionStore");
 require("events").EventEmitter.defaultMaxListeners = 20;
 
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 const PROCESSING_TIMEOUTS = {
   documentReadMs: 10000,
+  reportGenerationMs: 30000,
+  emailSendMs: 20000,
 };
 
 function withTimeout(promise, ms, label) {
@@ -38,6 +45,92 @@ function buildFailedDocument(file, reason) {
     totalPages: 0,
     extractionError: reason,
   };
+}
+
+async function buildAttachment(reportPath) {
+  const content = await fs.readFile(reportPath, { encoding: "base64" });
+  return {
+    filename: path.basename(reportPath),
+    content,
+  };
+}
+
+async function sendReviewEmail({ to, cc, subject, text, html, reportPath }) {
+  const attachments = reportPath ? [await buildAttachment(reportPath)] : undefined;
+
+  return withTimeout(
+    resend.emails.send({
+      from: "onboarding@resend.dev",
+      to,
+      cc,
+      subject,
+      text,
+      html,
+      attachments,
+    }),
+    PROCESSING_TIMEOUTS.emailSendMs,
+    "Review email send"
+  );
+}
+
+function buildReviewText(submission, validation, driveFolderLink, submissionId) {
+  return [
+    "The vendor submission review engine detected issues.",
+    "",
+    `Submission ID: ${submissionId || "-"}`,
+    `Vendor: ${submission.name || "-"}`,
+    `Email: ${submission.email || "-"}`,
+    `Phone: ${submission.phone || "-"}`,
+    `Constitution: ${submission.constitution || "-"}`,
+    `Vendor Type: ${submission.vendorType || "-"}`,
+    `Product: ${submission.product || "-"}`,
+    `Geo Address: ${submission.geoAddress || "-"}`,
+    `Geo Coordinates: ${submission.geoLatitude || "-"}, ${submission.geoLongitude || "-"}`,
+    `Geo Captured At: ${submission.geoCapturedAt || "-"}`,
+    `Google Maps Link: ${submission.geoMapsUrl || "-"}`,
+    "",
+    `Drive Folder: ${driveFolderLink || "Not available"}`,
+    `Detected Issues: ${validation.issues.length}`,
+    "",
+    "See the attached PDF report for details.",
+  ].join("\n");
+}
+
+function buildReviewHtml(submission, validation, driveFolderLink, submissionId) {
+  return `
+    <h2>Vendor Submission Needs Review</h2>
+    <p><b>Submission ID:</b> ${submissionId || "-"}</p>
+    <p><b>Vendor:</b> ${submission.name || "-"}</p>
+    <p><b>Email:</b> ${submission.email || "-"}</p>
+    <p><b>Phone:</b> ${submission.phone || "-"}</p>
+    <p><b>Detected Issues:</b> ${validation.issues.length}</p>
+    <p><b>Drive Folder:</b> <a href="${driveFolderLink || "#"}">${driveFolderLink || "Not available"}</a></p>
+    <p>The PDF report is attached.</p>
+  `;
+}
+
+function buildApprovalText(submission, driveFolderLink, submissionId) {
+  return [
+    "Vendor submission approved.",
+    "",
+    `Submission ID: ${submissionId || "-"}`,
+    `Vendor: ${submission.name || "-"}`,
+    `Drive Folder: ${driveFolderLink || "Not available"}`,
+    "",
+    "The verification report is attached.",
+  ].join("\n");
+}
+
+function buildApprovalHtml(driveFolderLink, submissionId) {
+  return `
+    <h2>Vendor Submission Approved</h2>
+    <p><b>Submission ID:</b> ${submissionId || "-"}</p>
+    <p>No issues were found in the submitted documents.</p>
+    <p><b>Drive Folder:</b></p>
+    <a href="${driveFolderLink || "#"}" target="_blank">${driveFolderLink || "Not available"}</a>
+    <br/><br/>
+    <p>Attached is the verification report.</p>
+  `;
 }
 
 async function readDocumentForDashboard(file) {
@@ -203,6 +296,57 @@ async function processSubmission({
     const faceResults = [];
     const validation = validateSubmission(submission, reviewedDocuments, faceResults);
     const processedAt = new Date().toISOString();
+    const reportsDir = path.join(__dirname, "..", "reports");
+
+    await fs.mkdir(reportsDir, { recursive: true });
+
+    const reportPath = await withTimeout(
+      generateIssueReport({
+        submission,
+        validation,
+        outputDir: reportsDir,
+      }),
+      PROCESSING_TIMEOUTS.reportGenerationMs,
+      "Report generation"
+    );
+
+    let reviewEmailSent = false;
+    let processingReason = "OCR and validation saved for dashboard review";
+
+    if (!runtime.enableReviewEmail) {
+      processingReason = "Review email skipped";
+      console.log(`[LOCAL TEST] Review email skipped. Report: ${reportPath}`);
+    } else {
+      const reviewRecipient = process.env.REVIEW_EMAIL || process.env.EMAIL_USER;
+
+      console.log("[Processing] Preparing review email...");
+
+      if (!validation.issues.length) {
+        await sendReviewEmail({
+          to: reviewRecipient,
+          cc: process.env.CC_EMAILS,
+          subject: `Vendor Approved - ${submission.name || "Unknown Vendor"}`,
+          text: buildApprovalText(submission, driveFolderLink, submissionId),
+          html: buildApprovalHtml(driveFolderLink, submissionId),
+          reportPath,
+        });
+      } else {
+        await sendReviewEmail({
+          to: reviewRecipient,
+          cc: process.env.CC_EMAILS,
+          subject: `Vendor Submission Issues - ${submission.name || "Unknown Vendor"}`,
+          text: buildReviewText(submission, validation, driveFolderLink, submissionId),
+          html: buildReviewHtml(submission, validation, driveFolderLink, submissionId),
+          reportPath,
+        });
+      }
+
+      reviewEmailSent = true;
+      processingReason = validation.issues.length
+        ? "Review email sent"
+        : "No issues detected (report sent)";
+      console.log("[Processing] Review email sent. Report:", reportPath);
+    }
 
     await updateRecordSafely(submissionId, (record) => ({
       ...record,
@@ -210,9 +354,9 @@ async function processSubmission({
       processing: {
         ...record.processing,
         completedAt: processedAt,
-        reviewEmailSent: false,
-        reportPath: null,
-        reason: "OCR and validation saved for dashboard review",
+        reviewEmailSent,
+        reportPath,
+        reason: processingReason,
         issuesCount: validation.issues.length,
         validationStatus: validation.status,
         error: null,
@@ -235,6 +379,8 @@ async function processSubmission({
     return {
       processed: true,
       validation,
+      reportPath,
+      reviewEmailSent,
     };
   } catch (error) {
     console.error("[Processing] Fatal processing error:", error);
