@@ -1,8 +1,7 @@
 const fs = require("fs/promises");
 const path = require("path");
 const { Resend } = require("resend");
-const { extractPdfText } = require("./pdfReader");
-const { readTextFromImage } = require("./ocrReader");
+const { readDocument } = require("./pdfReader");
 const { validateSubmission } = require("./validation");
 const { generateIssueReport } = require("./reportGenerator");
 const { downloadFolderFiles, cleanupTempDir } = require("../googleDrive");
@@ -135,54 +134,12 @@ function buildApprovalHtml(driveFolderLink, submissionId) {
 }
 
 async function readDocumentForDashboard(file) {
-  const extension = path.extname(file.originalname || file.filename || "").toLowerCase();
-  const isPdf = extension === ".pdf" || file.mimetype === "application/pdf";
-  const imageSourcePath = file.ocrSourcePath || file.sourcePath || null;
-  const canReadSourceImage = Boolean(file.convertedFromImage && imageSourcePath);
-
-  if (!isPdf && !canReadSourceImage) {
-    return {
-      ...file,
-      extractionStatus: "skipped",
-      extractedText: "",
-      rawExtractedText: "",
-      totalPages: 0,
-      extractionError: "No supported text extraction path found.",
-    };
-  }
-
   try {
-    let pdfText = "";
-    let totalPages = 0;
-
-    if (isPdf) {
-      const pdfResult = await extractPdfText(file.path);
-      pdfText = String(pdfResult.text || "");
-      totalPages = Number.isFinite(pdfResult.totalPages) ? pdfResult.totalPages : 0;
-    }
-
-    let imageText = "";
-    if (canReadSourceImage) {
-      imageText = await withTimeout(
-        readTextFromImage(imageSourcePath),
-        PROCESSING_TIMEOUTS.documentReadMs,
-        `${file.originalname} image OCR`
-      );
-    }
-
-    const normalizedPdfText = String(pdfText || "").replace(/\s+/g, " ").trim();
-    const normalizedImageText = String(imageText || "").replace(/\s+/g, " ").trim();
-    const normalizedText =
-      normalizedImageText.length > normalizedPdfText.length ? normalizedImageText : normalizedPdfText;
-
-    return {
-      ...file,
-      extractionStatus: normalizedText ? "success" : "empty",
-      extractedText: normalizedText,
-      rawExtractedText: normalizedText,
-      totalPages: Number.isFinite(totalPages) ? totalPages : 0,
-      extractionError: normalizedText ? null : "No readable text found in PDF or source image.",
-    };
+    return await withTimeout(
+      readDocument(file),
+      PROCESSING_TIMEOUTS.documentReadMs,
+      `${file.originalname} dashboard read`
+    );
   } catch (error) {
     return buildFailedDocument(file, error.message);
   }
@@ -282,11 +239,7 @@ async function processSubmission({
     for (const file of preparedFiles) {
       try {
         console.log("[Processing] Reading file for dashboard:", file.originalname);
-        const result = await withTimeout(
-          readDocumentForDashboard(file),
-          PROCESSING_TIMEOUTS.documentReadMs,
-          `${file.originalname} dashboard read`
-        );
+        const result = await readDocumentForDashboard(file);
         reviewedDocuments.push(result);
       } catch (err) {
         console.error("[Processing] Read failed:", file.originalname, err.message);
